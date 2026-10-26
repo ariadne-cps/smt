@@ -44,7 +44,7 @@
 #include "function/procedure.hpp"
 #include "solving/constraint_solver.hpp"
 #include "solving/interval_newton_method.hpp"
-#include "solving/nonlinear_programming.hpp"
+#include "solving/nonlinear_interior_point_method.hpp"
 #include "utility/exceptions.hpp"
 
 namespace Ariadne {
@@ -1091,7 +1091,7 @@ SmtSolver::_epsilon_candidate_witness(
         codomain[i]=this->_epsilon_bounds(conjunction[i]);
     }
 
-    NonlinearInfeasibleInteriorPointOptimiser candidate_solver;
+    NonlinearInfeasibleInteriorPointSolver candidate_solver;
     auto result=candidate_solver.feasible_candidate(
         cast_exact_box(domain),function,codomain);
     return singleton_box(cast_exact(result.second));
