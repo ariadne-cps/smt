@@ -1,5 +1,5 @@
 /***************************************************************************
- *            satisfiability/smt_solver.hpp
+ *            smt/smt_solver.hpp
  *
  *  Copyright  2026  Luca Geretti
  *
@@ -22,7 +22,7 @@
  *  along with Ariadne.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/*! \file satisfiability/smt_solver.hpp
+/*! \file smt/smt_solver.hpp
  *  \brief Common types for solving bounded real SMT problems.
  */
 
@@ -39,8 +39,8 @@
 #include "function/constraint.hpp"
 #include "function/procedure.hpp"
 #include "solving/constraint_solver.hpp"
-#include "satisfiability/smt_theory.hpp"
-#include "satisfiability/smt_boolean.hpp"
+#include "smt/smt_theory.hpp"
+#include "smt/smt_boolean.hpp"
 #include "symbolic/space.hpp"
 
 namespace Ariadne {

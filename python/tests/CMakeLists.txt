@@ -17,19 +17,19 @@ endif()
 
 if(PYTHON_TESTS)
     add_custom_target(
-        test_python_satisfiability
-        COMMAND "${Python3_EXECUTABLE}" -m pytest "${CMAKE_CURRENT_SOURCE_DIR}/test_satisfiability.py"
+        test_python_smt
+        COMMAND "${Python3_EXECUTABLE}" -m pytest "${CMAKE_CURRENT_SOURCE_DIR}/test_smt.py"
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
     add_test(
-        NAME test_python_satisfiability
-        COMMAND "${Python3_EXECUTABLE}" -m pytest "${CMAKE_CURRENT_SOURCE_DIR}/test_satisfiability.py"
+        NAME test_python_smt
+        COMMAND "${Python3_EXECUTABLE}" -m pytest "${CMAKE_CURRENT_SOURCE_DIR}/test_smt.py"
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
-    set_property(TEST test_python_satisfiability PROPERTY
+    set_property(TEST test_python_smt PROPERTY
         ENVIRONMENT "PYTHONPATH=$<TARGET_FILE_DIR:pyariadne>"
     )
-    set_property(TEST test_python_satisfiability PROPERTY LABELS "python;satisfiability")
-    add_dependencies(test_python_satisfiability pyariadne)
+    set_property(TEST test_python_smt PROPERTY LABELS "python;smt")
+    add_dependencies(test_python_smt pyariadne)
     add_dependencies(tests pyariadne)
 endif()

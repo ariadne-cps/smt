@@ -17,7 +17,7 @@
 #include <sstream>
 
 #include "numeric/numeric.hpp"
-#include "satisfiability/smt_theory.hpp"
+#include "smt/smt_theory.hpp"
 #include "symbolic/variable.hpp"
 
 #include "macro/testing.hpp"

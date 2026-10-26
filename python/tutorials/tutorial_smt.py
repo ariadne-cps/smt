@@ -15,7 +15,7 @@ def show(label, value):
     print(f"{label}: {value}")
 
 
-def tutorial_satisfiability():
+def tutorial_smt():
     section("Bounded real epsilon-SMT")
 
     x = RealVariable("x")
@@ -67,4 +67,4 @@ def tutorial_satisfiability():
 
 
 if __name__ == "__main__":
-    tutorial_satisfiability()
+    tutorial_smt()

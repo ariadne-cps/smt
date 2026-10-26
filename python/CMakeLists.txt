@@ -10,13 +10,13 @@ if(Python3_FOUND)
     report_python_configuration_once()
 
     if(NOT TARGET pyariadne-symbolic)
-        message(FATAL_ERROR "The Symbolic Python binding target is required to build pyariadne-satisfiability.")
+        message(FATAL_ERROR "The Symbolic Python binding target is required to build pyariadne-smt.")
     endif()
 
     add_subdirectory(bindings)
 
     if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
-        ariadne_finalize_python_module(NAME satisfiability)
+        ariadne_finalize_python_module(NAME smt)
 
         # The interface binding targets contribute objects to the combined
         # pyariadne extension. Install the extension within the chosen prefix.

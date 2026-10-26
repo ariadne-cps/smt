@@ -2,7 +2,7 @@ from pyariadne import *
 
 
 
-def test_satisfiability():
+def test_smt():
     x = RealVariable("x")
     space = RealSpace([x])
     domain = FloatDPExactBox([

@@ -8,9 +8,9 @@ set(UNIT_TESTS
 )
 foreach(TEST ${UNIT_TESTS})
     add_executable(${TEST} ${TEST}.cpp)
-    target_link_libraries(${TEST} ariadne-satisfiability satisfiability)
+    target_link_libraries(${TEST} ariadne-smt smt)
     add_test(NAME ${TEST} COMMAND $<TARGET_FILE:${TEST}>)
-    set_property(TEST ${TEST} PROPERTY LABELS "satisfiability")
+    set_property(TEST ${TEST} PROPERTY LABELS "smt")
 endforeach()
 target_include_directories(test_smt_neural_benchmarks PRIVATE ${PROJECT_SOURCE_DIR}/benchmarks)
 target_compile_definitions(test_smt_neural_benchmarks PRIVATE

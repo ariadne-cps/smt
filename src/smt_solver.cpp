@@ -1,5 +1,5 @@
 /***************************************************************************
- *            satisfiability/smt_solver.cpp
+ *            smt/smt_solver.cpp
  *
  *  Copyright  2026  Luca Geretti
  *
@@ -22,7 +22,7 @@
  *  along with Ariadne.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "satisfiability/smt_solver.hpp"
+#include "smt/smt_solver.hpp"
 
 #include <chrono>
 

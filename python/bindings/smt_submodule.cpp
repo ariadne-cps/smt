@@ -1,5 +1,5 @@
 /***************************************************************************
- *            satisfiability_submodule.cpp
+ *            smt_submodule.cpp
  *
  *  Copyright  2026  Luca Geretti
  *
@@ -8,11 +8,11 @@
 #include "pybind11.hpp"
 #include "kernel-utilities.hpp"
 
-#include "satisfiability/smt_solver.hpp"
+#include "smt/smt_solver.hpp"
 
 using namespace Ariadne;
 
-Void satisfiability_submodule(pybind11::module& module)
+Void smt_submodule(pybind11::module& module)
 {
     pybind11::enum_<SmtResultStatus>(module,"SmtResultStatus")
         .value("UNSAT",SmtResultStatus::UNSAT)

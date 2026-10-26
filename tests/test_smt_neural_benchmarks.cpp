@@ -8,7 +8,7 @@
 #include <iostream>
 #include <limits>
 
-#include "satisfiability/smt_solver.hpp"
+#include "smt/smt_solver.hpp"
 
 #include "smt_barr3_full64.hpp"
 
