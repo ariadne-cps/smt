@@ -43,7 +43,7 @@
 
 #include "function/procedure.hpp"
 #include "solving/constraint_solver.hpp"
-#include "solving/solver.hpp"
+#include "solving/interval_newton_method.hpp"
 #include "solving/nonlinear_programming.hpp"
 #include "utility/exceptions.hpp"
 
@@ -840,10 +840,10 @@ Bool SmtSolver::_original_reduce(UpperBoxType& domain,
                     function[i]=literals[newton_subsystem[i]].function;
                 }
 
-                Vector<SolverInterface::ValidatedNumericType> current=
+                Vector<EquationSolverInterface::ValidatedNumericType> current=
                     cast_singleton(cast_exact_box(domain));
                 IntervalNewtonSolver newton_solver(1e-12,1u);
-                Vector<SolverInterface::ValidatedNumericType> image=
+                Vector<EquationSolverInterface::ValidatedNumericType> image=
                     newton_solver.step(function,current);
 
                 if(not consistent(image,current)) {

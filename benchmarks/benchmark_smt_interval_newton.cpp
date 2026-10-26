@@ -14,7 +14,8 @@
 #include "function/function.hpp"
 #include "function/procedure.hpp"
 #include "geometry/box.hpp"
-#include "solving/solver.hpp"
+#include "solving/constraint_solver.hpp"
+#include "solving/interval_newton_method.hpp"
 #include "satisfiability/smt_solver.hpp"
 
 using namespace Ariadne;
@@ -62,7 +63,7 @@ double elapsed_seconds(std::chrono::steady_clock::time_point const& start)
         std::chrono::steady_clock::now()-start).count();
 }
 
-double width_sum(Vector<SolverInterface::ValidatedNumericType> const& box)
+double width_sum(Vector<EquationSolverInterface::ValidatedNumericType> const& box)
 {
     double result=0.0;
     for(SizeType i=0u;i!=box.size();++i) {
@@ -205,7 +206,7 @@ Int main(Int argc,const char* argv[])
                 }
             }
 
-            Vector<SolverInterface::ValidatedNumericType> current=
+            Vector<EquationSolverInterface::ValidatedNumericType> current=
                 cast_singleton(cast_exact_box(domain));
             double const before_newton_width=width_sum(current);
             Bool singular=false;
@@ -997,18 +998,18 @@ Int main(Int argc,const char* argv[])
                     ExactIntervalType(-1.0_x,1.0_x),
                     ExactIntervalType(-1.0_x,1.0_x)});
 
-    Vector<SolverInterface::ValidatedNumericType> current=
+    Vector<EquationSolverInterface::ValidatedNumericType> current=
         cast_singleton(exact_domain);
     IntervalNewtonSolver solver(1e-12,1u);
 
     auto const start=std::chrono::steady_clock::now();
     try {
-        Vector<SolverInterface::ValidatedNumericType> image=
+        Vector<EquationSolverInterface::ValidatedNumericType> image=
             solver.step(function,current);
         double const seconds=elapsed_seconds(start);
         Bool const disjoint=not consistent(image,current);
 
-        Vector<SolverInterface::ValidatedNumericType> contracted=current;
+        Vector<EquationSolverInterface::ValidatedNumericType> contracted=current;
         if(not disjoint) {
             contracted=refinement(image,current);
         }
