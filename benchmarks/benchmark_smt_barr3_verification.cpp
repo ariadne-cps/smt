@@ -19,7 +19,7 @@
 #include "function/taylor_function.hpp"
 #include "function/affine_model.hpp"
 #include "symbolic/expression.hpp"
-#include "solving/linear_programming.hpp"
+#include "solving/linear_simplex_algorithm.hpp"
 #include "satisfiability/smt_solver.hpp"
 
 #include "smt_barr3_full64.hpp"
@@ -857,7 +857,7 @@ Bool xtaylor_contract_2d(
     std::array<FloatDP,2u>& contracted_lower,
     std::array<FloatDP,2u>& contracted_upper)
 {
-    SimplexSolver<FloatDP> solver;
+    LinearSimplexSolver<FloatDP> solver;
 
     try {
         auto lp_start=std::chrono::steady_clock::now();
@@ -916,7 +916,7 @@ Bool xtaylor_feasible_2d(
     XTaylorRelaxation const& relaxation,
     XTaylorProfileCounts& counts)
 {
-    SimplexSolver<FloatDP> solver;
+    LinearSimplexSolver<FloatDP> solver;
 
     try {
         auto lp_start=std::chrono::steady_clock::now();
