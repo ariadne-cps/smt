@@ -63,10 +63,6 @@ inline RealExpression constant(double value) {
     return RealExpression(Real(ExactDouble(value)));
 }
 
-inline RealExpression tanh_expression(RealExpression const& value) {
-    return tanh(value);
-}
-
 inline RealExpression network(RealExpression const& x0, RealExpression const& x1) {
     auto const& p=parameters();
     std::array<RealExpression,width> h1;
@@ -74,7 +70,7 @@ inline RealExpression network(RealExpression const& x0, RealExpression const& x1
         RealExpression z=constant(p[b1_offset+i])
             + constant(p[w1_offset+2u*i])*x0
             + constant(p[w1_offset+2u*i+1u])*x1;
-        h1[i]=tanh_expression(z);
+        h1[i]=tanh(z);
     }
     std::array<RealExpression,width> h2;
     for(SizeType i=0u;i!=width;++i) {
@@ -82,7 +78,7 @@ inline RealExpression network(RealExpression const& x0, RealExpression const& x1
         for(SizeType j=0u;j!=width;++j) {
             z=z+constant(p[w2_offset+width*i+j])*h1[j];
         }
-        h2[i]=tanh_expression(z);
+        h2[i]=tanh(z);
     }
     RealExpression output=constant(p[b3_offset]);
     for(SizeType i=0u;i!=width;++i) {
@@ -112,7 +108,7 @@ inline NetworkAndLie network_and_lie(
         RealExpression z=constant(p[b1_offset+i])
             + constant(p[w1_offset+2u*i])*x0
             + constant(p[w1_offset+2u*i+1u])*x1;
-        h1[i]=tanh_expression(z);
+        h1[i]=tanh(z);
         RealExpression factor=1-sqr(h1[i]);
         dh1_dx[i]=factor*constant(p[w1_offset+2u*i]);
         dh1_dy[i]=factor*constant(p[w1_offset+2u*i+1u]);
@@ -131,7 +127,7 @@ inline NetworkAndLie network_and_lie(
             dz_dx=dz_dx+weight*dh1_dx[j];
             dz_dy=dz_dy+weight*dh1_dy[j];
         }
-        h2[i]=tanh_expression(z);
+        h2[i]=tanh(z);
         RealExpression factor=1-sqr(h2[i]);
         dh2_dx[i]=factor*dz_dx;
         dh2_dy[i]=factor*dz_dy;

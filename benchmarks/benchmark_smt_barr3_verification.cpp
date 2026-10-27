@@ -278,11 +278,6 @@ Void print_result(String const& name,SmtResult const& result,double seconds) {
     }
 }
 
-FloatDPBounds stable_tanh(FloatDPBounds const& x)
-{
-    return tanh(x);
-}
-
 struct DirectBarr3Evaluation {
     FloatDPBounds barrier;
     FloatDPBounds db_dx;
@@ -307,7 +302,7 @@ DirectBarr3Evaluation direct_barr3_evaluate(Vector<FloatDPBounds> const& x)
         FloatDPBounds z=c(TestBarr3Full64::b1_offset+i)
             + c(TestBarr3Full64::w1_offset+2u*i)*x[0]
             + c(TestBarr3Full64::w1_offset+2u*i+1u)*x[1];
-        h1[i]=stable_tanh(z);
+        h1[i]=tanh(z);
         FloatDPBounds factor=FloatDPBounds(1,dp)-sqr(h1[i]);
         dh1_dx[i]=factor*c(TestBarr3Full64::w1_offset+2u*i);
         dh1_dy[i]=factor*c(TestBarr3Full64::w1_offset+2u*i+1u);
@@ -326,7 +321,7 @@ DirectBarr3Evaluation direct_barr3_evaluate(Vector<FloatDPBounds> const& x)
             dz_dx+=weight*dh1_dx[j];
             dz_dy+=weight*dh1_dy[j];
         }
-        h2[i]=stable_tanh(z);
+        h2[i]=tanh(z);
         FloatDPBounds factor=FloatDPBounds(1,dp)-sqr(h2[i]);
         dh2_dx[i]=factor*dz_dx;
         dh2_dy[i]=factor*dz_dy;
