@@ -72,20 +72,13 @@ inline RealExpression constant(double value) {
     return RealExpression(Real(ExactDouble(value)));
 }
 
-inline RealExpression tanh_expression(RealExpression const& value) {
-    // No primitive symbolic tanh node exists today; this is the exact real
-    // identity tanh(z)=(exp(2z)-1)/(exp(2z)+1).
-    RealExpression e=exp(2*value);
-    return (e-1)/(e+1);
-}
-
 inline RealExpression network(RealExpression const& x0, RealExpression const& x1) {
     std::array<RealExpression,width> h1;
     for(SizeType i=0u; i!=width; ++i) {
         RealExpression z=constant(b1[i])
             + constant(w1[2u*i])*x0
             + constant(w1[2u*i+1u])*x1;
-        h1[i]=tanh_expression(z);
+        h1[i]=tanh(z);
     }
     std::array<RealExpression,width> h2;
     for(SizeType i=0u; i!=width; ++i) {
@@ -93,7 +86,7 @@ inline RealExpression network(RealExpression const& x0, RealExpression const& x1
         for(SizeType j=0u; j!=width; ++j) {
             z=z+constant(w2[width*i+j])*h1[j];
         }
-        h2[i]=tanh_expression(z);
+        h2[i]=tanh(z);
     }
     RealExpression output=constant(b3[0]);
     for(SizeType i=0u; i!=width; ++i) {
