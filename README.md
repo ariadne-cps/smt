@@ -21,8 +21,10 @@ SMT depends directly on:
 
 - [ariadne-cps/symbolic](https://github.com/ariadne-cps/symbolic) (Git submodule).
 - [ariadne-cps/configuration](https://github.com/ariadne-cps/configuration) (shared build configuration).
+- [ariadne-cps/cdcl](https://github.com/ariadne-cps/cdcl) (shared Boolean search engine).
 
 Symbolic brings in Kernel and the lower Ariadne dependencies transitively.
+SMT checks that the transitive Utility commit matches the one pinned by CDCL.
 
 ## Build
 

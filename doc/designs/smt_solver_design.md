@@ -5042,3 +5042,22 @@ retaining this historical alias. New consumers should include
 
 This is an API cleanup, not a change to Boolean indices, literal
 representation, theory handling, clause propagation, or solver behavior.
+
+### 2026-10-27 - Codecov policy and watched-literal CDCL upgrade
+
+Added `.codecov.yml` matching Symbolic's coverage status and gcov branch
+configuration, including the exclusion of `tests`. The existing Coverage
+workflow and README Codecov badge already match Symbolic and remain in
+place. Explicitly documented CDCL as a direct SMT dependency in README.
+
+Advance the direct `ss/cdcl` pin from
+`849b4419365312859f64220dcdd472066bd6a51f` to
+`e3c676f7fe02c5600fa77c271a8556cb8ae4818c`, validated by CDCL's
+four CI workflows. This brings trail-event/two-watched-literal Boolean
+propagation while leaving SMT numerical theory checks, certified witnesses
+and UNKNOWN semantics unchanged.
+
+Added a configure-time Utility gitlink equality check across
+`symbolic|kernel|bdd|threading|logging|utility` and `cdcl|utility`,
+complementing the existing Configuration consistency checks. Both resolve
+to `c3b31461cd3747f6c38640524d71899db0f69d4f`.

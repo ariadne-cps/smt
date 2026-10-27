@@ -23,6 +23,11 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
             "symbolic|configuration"
             "cdcl|configuration"
     )
+    require_same_dependency_commit(Utility
+        CHAINS
+            "symbolic|kernel|bdd|threading|logging|utility"
+            "cdcl|utility"
+    )
 endif()
 
 setup_project()
