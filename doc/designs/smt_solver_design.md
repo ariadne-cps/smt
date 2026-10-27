@@ -4837,3 +4837,23 @@ about a materially significant speedup or regression. Sub-second and low
 single-digit-percent differences on tens-of-seconds workloads are not targets
 for additional measurement unless they accumulate into a larger architectural
 effect.
+
+### Barr3 tanh adapter cleanup (October 2026)
+
+The Full64 network fixture and direct Barr3 diagnostic now call the native
+`tanh` overloads directly. The old `tanh_expression` and `stable_tanh`
+functions were thin delegations to the same native implementation, so their
+removal is a representation-neutral refactor. The Prefix8, Prefix16 and
+Prefix32 scaling fixtures now construct native symbolic `tanh` nodes rather
+than expanding `(exp(2*z)-1)/(exp(2*z)+1)`. This deliberately changes the
+expression representation and its interval evaluation, not the underlying
+network parameters or mathematical activation.
+
+No SMT-specific rounded-hyperbolic-tangent implementation is retained.
+`tanh(RealExpression)` reaches the standard symbolic and validated numeric
+layers; `tanh(FloatDPBounds)` evaluates directed-rounded endpoints through
+the Numeric interface, which can use `tanh_rnd`. Regression of the Full64
+smoke test and standalone benchmark, together with the standard Unix,
+Windows, Coverage and Sanitizers CI, is required to validate the change.
+The prefix fixtures remain available as historical scaling inputs; currently
+they are not included by an active test target.
