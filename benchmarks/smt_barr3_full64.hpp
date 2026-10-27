@@ -1,4 +1,32 @@
 /***************************************************************************
+ *            smt_barr3_full64.hpp
+ *
+ *  Copyright  2026  Luca Geretti
+ *
+ ****************************************************************************/
+
+/*
+ *  This file is part of Ariadne.
+ *
+ *  Ariadne is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  Ariadne is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with Ariadne.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/*! \file smt_barr3_full64.hpp
+ *  \brief Published Barr3 neural network fixture and provenance data.
+ */
+
+/***************************************************************************
  * Published Barr3 2-64-64-1 tanh network fixture.
  *
  * Original checkpoint SHA-256:
@@ -10,6 +38,7 @@
  * Payload layout, all IEEE-754 binary32, little-endian:
  * W1[64][2], b1[64], W2[64][64], b2[64], W3[1][64], b3[1].
  ***************************************************************************/
+
 #ifndef ARIADNE_TEST_SMT_BARR3_FULL64_HPP
 #define ARIADNE_TEST_SMT_BARR3_FULL64_HPP
 

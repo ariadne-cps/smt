@@ -1,4 +1,32 @@
 /***************************************************************************
+ *            smt_barr3_prefix8.hpp
+ *
+ *  Copyright  2026  Luca Geretti
+ *
+ ****************************************************************************/
+
+/*
+ *  This file is part of Ariadne.
+ *
+ *  Ariadne is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  Ariadne is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with Ariadne.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/*! \file smt_barr3_prefix8.hpp
+ *  \brief Eight-neuron Barr3 scaling fixture.
+ */
+
+/***************************************************************************
  *  Barr3 2-8-8-1 scaling fixture derived from the published 2-64-64-1 model.
  *
  *  Source checkpoint SHA-256:

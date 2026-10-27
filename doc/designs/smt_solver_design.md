@@ -5020,3 +5020,12 @@ rejects leaves, this could repeat the same branch indefinitely and overflow
 ThreadSanitizer's stack. The CDCL dependency is updated to the correction,
 which preserves assignments through the target decision level. Both the
 standalone solver and SMT will be validated by their normal CI workflows.
+
+### 2026-10-27 - Normalize source-file copyright and license headers
+
+Standardized C++ source and header banners to the complete GNU GPL notice,
+copyright format and Doxygen file description used by
+`include/smt/smt_solver.hpp`. Existing full-license banners remain unchanged.
+Retained Barr3 checkpoint SHA-256 identifiers and network-fixture provenance
+comments intact. This change affects documentation/comments only, not the
+solver algorithm or numerical data.

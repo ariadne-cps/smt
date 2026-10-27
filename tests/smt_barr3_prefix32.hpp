@@ -1,4 +1,32 @@
 /***************************************************************************
+ *            smt_barr3_prefix32.hpp
+ *
+ *  Copyright  2026  Luca Geretti
+ *
+ ****************************************************************************/
+
+/*
+ *  This file is part of Ariadne.
+ *
+ *  Ariadne is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  Ariadne is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with Ariadne.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/*! \file smt_barr3_prefix32.hpp
+ *  \brief Thirty-two-neuron Barr3 scaling fixture.
+ */
+
+/***************************************************************************
  * Barr3 2-32-32-1 scaling fixture derived from the published 2-64-64-1 model.
  * Source checkpoint SHA-256:
  * 788fd56f21abb0cb5b83206b12d4d8d0ed718896c2140222a8fd129475f6c213
@@ -6,6 +34,7 @@
  * 641b4799849f0057a11000a90b6c0910acc280dc0bd97777ca3142ff3089fecf
  * This prefix is a scaling fixture, NOT the published Barrier-3 certificate.
  ***************************************************************************/
+
 #ifndef ARIADNE_TEST_SMT_BARR3_PREFIX32_HPP
 #define ARIADNE_TEST_SMT_BARR3_PREFIX32_HPP
 #include <array>
