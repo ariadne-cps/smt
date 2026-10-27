@@ -18,23 +18,49 @@
 #include <optional>
 #include <stdexcept>
 #include <vector>
-#include "smt/smt_solver.hpp"
 #include "smt/boolean_literal.hpp"
 
 namespace Ariadne {
 
+struct CdclStatistics {
+    SizeType learned_clauses = 0u;
+    SizeType theory_learned_clauses = 0u;
+    SizeType theory_learned_clause_literals = 0u;
+    SizeType peak_active_non_theory_learned_clauses = 0u;
+    SizeType learned_clause_activity_bumps = 0u;
+    SizeType learned_clause_pruning_runs = 0u;
+    SizeType learned_clauses_pruned = 0u;
+    SizeType boolean_conflicts = 0u;
+    SizeType boolean_propagations = 0u;
+    SizeType boolean_reasoned_propagations = 0u;
+    SizeType learned_clause_propagations = 0u;
+    SizeType theory_learned_clause_propagations = 0u;
+    SizeType max_decision_level = 0u;
+    SizeType boolean_conflicts_analyzed = 0u;
+    SizeType learned_clause_literals = 0u;
+    SizeType last_learned_clause_literals = 0u;
+    SizeType last_learned_current_level_literals = 0u;
+    SizeType last_backjump_level = 0u;
+    SizeType nonchronological_backjumps = 0u;
+    SizeType boolean_backtracks = 0u;
+    SizeType boolean_decisions = 0u;
+};
+
 //! \brief Propositional CDCL trail, clauses, unit propagation and 1-UIP analysis.
-//! \details Transitional SMT-local implementation. No theory checking happens here;
-//! the derived SMT search supplies theory conflicts and certified witnesses.
-class SmtCdclState {
+//! \details Theory-free state: owns only variables, clauses and CDCL statistics.
+//! The caller supplies the formula and interprets theory checks separately.
+class CdclState {
   protected:
-    SmtCdclState(SmtBooleanEncoding const& encoding, SizeType learned_clause_limit)
-        : _encoding(encoding),
+    CdclState(SizeType variable_count,
+              std::vector<std::vector<BooleanLiteral>> const& original_clauses,
+              SizeType learned_clause_limit)
+        : _variable_count(variable_count),
+          _original_clauses(original_clauses),
           _learned_clause_limit(learned_clause_limit),
-          _assignment(encoding.variable_count())
+          _assignment(variable_count)
     {
-        _trail.reserve(encoding.variable_count());
-        _decision_level_markers.reserve(encoding.variable_count()+1u);
+        _trail.reserve(variable_count);
+        _decision_level_markers.reserve(variable_count+1u);
         _decision_level_markers.push_back(0u);
     }
 
@@ -70,7 +96,7 @@ class SmtCdclState {
 
     SizeType _original_clause_count() const
     {
-        return _encoding.clauses().size();
+        return _original_clauses.size();
     }
 
     SizeType _clause_count() const
@@ -78,18 +104,17 @@ class SmtCdclState {
         return this->_original_clause_count()+_learned_clauses.size();
     }
 
-    SmtBooleanEncoding::Clause const& _clause(SizeType index) const
+    std::vector<BooleanLiteral> const& _clause(SizeType index) const
     {
         if(index<this->_original_clause_count()) {
-            return _encoding.clauses()[index];
+            return _original_clauses[index];
         }
         return _learned_clauses[index-this->_original_clause_count()];
     }
 
     Bool _is_learned_clause(SizeType index) const
     {
-        return SmtSolverTestSupport::clause_is_learned(
-            index,this->_original_clause_count());
+        return index>=this->_original_clause_count();
     }
 
     SizeType _add_learned_clause(std::vector<BooleanLiteral> const& clause, Bool theory_clause = false)
@@ -97,14 +122,14 @@ class SmtCdclState {
         _learned_clauses.emplace_back(clause.begin(),clause.end());
         _learned_clause_is_theory.push_back(theory_clause);
         _learned_clause_activity.push_back(1u);
-        _learned_clause_generation.push_back(_statistics.learned_clauses);
-        ++_statistics.learned_clauses;
+        _learned_clause_generation.push_back(_cdcl_statistics.learned_clauses);
+        ++_cdcl_statistics.learned_clauses;
         if(theory_clause) {
-            ++_statistics.theory_learned_clauses;
-            _statistics.theory_learned_clause_literals+=clause.size();
+            ++_cdcl_statistics.theory_learned_clauses;
+            _cdcl_statistics.theory_learned_clause_literals+=clause.size();
         } else {
-            _statistics.peak_active_non_theory_learned_clauses=std::max(
-                _statistics.peak_active_non_theory_learned_clauses,
+            _cdcl_statistics.peak_active_non_theory_learned_clauses=std::max(
+                _cdcl_statistics.peak_active_non_theory_learned_clauses,
                 this->_active_non_theory_learned_clause_count());
         }
         return this->_original_clause_count()+_learned_clauses.size()-1u;
@@ -112,8 +137,8 @@ class SmtCdclState {
 
     Bool _is_theory_learned_clause(SizeType index) const
     {
-        return SmtSolverTestSupport::learned_clause_is_theory(
-            index,this->_original_clause_count(),_learned_clause_is_theory);
+        return this->_is_learned_clause(index)
+            and _learned_clause_is_theory[index-this->_original_clause_count()];
     }
 
     SizeType _active_non_theory_learned_clause_count() const
@@ -130,8 +155,8 @@ class SmtCdclState {
     Bool _learned_clause_locked(SizeType index) const
     {
         for(AssignmentInfo const& assignment:_assignment) {
-            if(SmtSolverTestSupport::assignment_locks_clause(
-                    assignment.value,assignment.reason_clause,index)) {
+            if(assignment.value>=0
+                    and assignment.reason_clause==std::optional<SizeType>(index)) {
                 return true;
             }
         }
@@ -145,42 +170,48 @@ class SmtCdclState {
         }
         SizeType learned_index=index-this->_original_clause_count();
         ++_learned_clause_activity[learned_index];
-        ++_statistics.learned_clause_activity_bumps;
+        ++_cdcl_statistics.learned_clause_activity_bumps;
     }
 
     Void _maybe_prune_learned_clauses(SizeType protected_clause)
     {
-        SizeType const limit=_learned_clause_limit;
         SizeType active=this->_active_non_theory_learned_clause_count();
-        if(active<=limit) {
+        if(active<=_learned_clause_limit) {
             return;
         }
 
-        ++_statistics.learned_clause_pruning_runs;
-        std::vector<SmtSolverTestSupport::LearnedClausePruningEntry> entries;
-        entries.reserve(_learned_clauses.size());
+        ++_cdcl_statistics.learned_clause_pruning_runs;
+        // Maintain candidate selection but do not deactivate learned clauses:
+        // removal must wait for a progress-preserving reduction algorithm.
+        struct Candidate {
+            SizeType index;
+            SizeType activity;
+            SizeType size;
+        };
+        std::vector<Candidate> candidates;
         for(SizeType i=0u; i<_learned_clauses.size(); ++i) {
             SizeType clause_index=this->_original_clause_count()+i;
-            SizeType const current_generation=_statistics.learned_clauses;
-            SizeType const clause_generation=_learned_clause_generation[i];
-            entries.push_back({
-                true,
-                _learned_clause_is_theory[i],
-                current_generation<=clause_generation+2u,
-                _learned_clauses[i].size()<=2u,
-                _learned_clause_activity[i]>1u,
-                clause_index==protected_clause,
-                this->_learned_clause_locked(clause_index),
-                _learned_clause_activity[i],
-                _learned_clauses[i].size()
-            });
+            Bool const recent=_cdcl_statistics.learned_clauses<=
+                _learned_clause_generation[i]+2u;
+            Bool const excluded=_learned_clause_is_theory[i] or recent
+                or _learned_clauses[i].size()<=2u
+                or _learned_clause_activity[i]>1u
+                or clause_index==protected_clause
+                or this->_learned_clause_locked(clause_index);
+            if(not excluded) {
+                candidates.push_back({
+                    clause_index,_learned_clause_activity[i],_learned_clauses[i].size()
+                });
+            }
         }
-        std::vector<SizeType> candidates=
-            SmtSolverTestSupport::learned_clause_pruning_candidates(entries);
-
-        _statistics.learned_clauses_pruned+=
-            SmtSolverTestSupport::apply_learned_clause_pruning(
-                candidates,active,limit);
+        std::stable_sort(candidates.begin(),candidates.end(),
+            [](Candidate const& lhs,Candidate const& rhs) {
+                if(lhs.activity!=rhs.activity) {
+                    return lhs.activity<rhs.activity;
+                }
+                return lhs.size>rhs.size;
+            });
+        (void)candidates;
     }
 
     Bool _unit_propagate()
@@ -212,7 +243,7 @@ class SmtCdclState {
                 }
 
                 if(unassigned_count==0u) {
-                    ++_statistics.boolean_conflicts;
+                    ++_cdcl_statistics.boolean_conflicts;
                     this->_bump_learned_clause_activity(clause_index);
                     _last_boolean_conflict_clause=clause_index;
                     return false;
@@ -220,13 +251,13 @@ class SmtCdclState {
 
                 if(unassigned_count==1u) {
                     this->_assign_literal(*unit_literal,clause_index);
-                    ++_statistics.boolean_propagations;
-                    ++_statistics.boolean_reasoned_propagations;
+                    ++_cdcl_statistics.boolean_propagations;
+                    ++_cdcl_statistics.boolean_reasoned_propagations;
                     if(this->_is_learned_clause(clause_index)) {
                         this->_bump_learned_clause_activity(clause_index);
-                        ++_statistics.learned_clause_propagations;
+                        ++_cdcl_statistics.learned_clause_propagations;
                         if(this->_is_theory_learned_clause(clause_index)) {
-                            ++_statistics.theory_learned_clause_propagations;
+                            ++_cdcl_statistics.theory_learned_clause_propagations;
                         }
                     }
                     changed=true;
@@ -261,10 +292,22 @@ class SmtCdclState {
 
     std::vector<BooleanLiteral> _resolve_on_variable(
         std::vector<BooleanLiteral> const& lhs,
-        SmtBooleanEncoding::Clause const& rhs,
+        std::vector<BooleanLiteral> const& rhs,
         SizeType variable) const
     {
-        return SmtSolverTestSupport::resolve_clause_on_variable(lhs,rhs,variable);
+        std::vector<BooleanLiteral> resolved;
+        resolved.reserve(lhs.size()+rhs.size());
+        auto append_unique=[&](BooleanLiteral literal) {
+            if(literal.variable()==variable) {
+                return;
+            }
+            if(std::find(resolved.begin(),resolved.end(),literal)==resolved.end()) {
+                resolved.push_back(literal);
+            }
+        };
+        for(BooleanLiteral literal:lhs) { append_unique(literal); }
+        for(BooleanLiteral literal:rhs) { append_unique(literal); }
+        return resolved;
     }
 
     ConflictAnalysis _analyze_boolean_conflict(SizeType conflict_clause_index)
@@ -316,12 +359,12 @@ class SmtCdclState {
 
     SizeType _next_unassigned_variable() const
     {
-        for(SizeType variable=0u; variable<_encoding.variable_count(); ++variable) {
+        for(SizeType variable=0u; variable<_variable_count; ++variable) {
             if(_assignment[variable].value<0) {
                 return variable;
             }
         }
-        return _encoding.variable_count();
+        return _variable_count;
     }
 
     SizeType _decision_level() const
@@ -332,8 +375,8 @@ class SmtCdclState {
     Void _push_decision_level()
     {
         _decision_level_markers.push_back(_trail.size());
-        _statistics.max_decision_level=std::max(
-            _statistics.max_decision_level,this->_decision_level());
+        _cdcl_statistics.max_decision_level=std::max(
+            _cdcl_statistics.max_decision_level,this->_decision_level());
     }
 
     Void _backtrack_to_level(SizeType level)
@@ -348,17 +391,18 @@ class SmtCdclState {
     }
 
 
-    SmtBooleanEncoding const& _encoding;
+    SizeType _variable_count;
+    std::vector<std::vector<BooleanLiteral>> const& _original_clauses;
     SizeType _learned_clause_limit;
     std::vector<AssignmentInfo> _assignment;
     std::vector<SizeType> _trail;
     std::vector<SizeType> _decision_level_markers;
-    std::vector<SmtBooleanEncoding::Clause> _learned_clauses;
+    std::vector<std::vector<BooleanLiteral>> _learned_clauses;
     std::vector<Bool> _learned_clause_is_theory;
     std::vector<SizeType> _learned_clause_activity;
     std::vector<SizeType> _learned_clause_generation;
     std::optional<SizeType> _last_boolean_conflict_clause;
-    SmtSearchStatistics _statistics;
+    CdclStatistics _cdcl_statistics;
 };
 
 } // namespace Ariadne

@@ -2425,17 +2425,19 @@ Void accumulate_box_processing_statistics(
 
 namespace {
 
-class SmtDpllSearch : private SmtCdclState {
+class SmtDpllSearch : private CdclState {
   public:
     SmtDpllSearch(SmtSolver const& solver,
                   RealSpace const& space,
                   ExactBoxType const& domain,
                   SmtBooleanEncoding const& encoding,
                   Bool parallel)
-        : SmtCdclState(encoding,solver.configuration().learned_clause_limit()),
+        : CdclState(encoding.variable_count(),encoding.clauses(),
+                    solver.configuration().learned_clause_limit()),
           _solver(solver),
           _space(space),
           _domain(domain),
+          _encoding(encoding),
           _parallel(parallel)
     { }
 
@@ -2445,12 +2447,45 @@ class SmtDpllSearch : private SmtCdclState {
             return SmtResult::unsat(_statistics);
         }
         SmtSolverTestSupport::SearchOutcome outcome=this->_search_boolean();
+        this->_merge_cdcl_statistics();
         return SmtSolverTestSupport::finalize_search_outcome(
             outcome,_theory_unknown_reason,_statistics);
     }
 
   private:
     using SearchOutcome=SmtSolverTestSupport::SearchOutcome;
+
+    Void _merge_cdcl_statistics()
+    {
+        _statistics.learned_clauses+=_cdcl_statistics.learned_clauses;
+        _statistics.theory_learned_clauses+=_cdcl_statistics.theory_learned_clauses;
+        _statistics.theory_learned_clause_literals+=_cdcl_statistics.theory_learned_clause_literals;
+        _statistics.learned_clause_activity_bumps+=_cdcl_statistics.learned_clause_activity_bumps;
+        _statistics.learned_clause_pruning_runs+=_cdcl_statistics.learned_clause_pruning_runs;
+        _statistics.learned_clauses_pruned+=_cdcl_statistics.learned_clauses_pruned;
+        _statistics.boolean_conflicts+=_cdcl_statistics.boolean_conflicts;
+        _statistics.boolean_propagations+=_cdcl_statistics.boolean_propagations;
+        _statistics.boolean_reasoned_propagations+=_cdcl_statistics.boolean_reasoned_propagations;
+        _statistics.learned_clause_propagations+=_cdcl_statistics.learned_clause_propagations;
+        _statistics.theory_learned_clause_propagations+=_cdcl_statistics.theory_learned_clause_propagations;
+        _statistics.boolean_conflicts_analyzed+=_cdcl_statistics.boolean_conflicts_analyzed;
+        _statistics.learned_clause_literals+=_cdcl_statistics.learned_clause_literals;
+        _statistics.nonchronological_backjumps+=_cdcl_statistics.nonchronological_backjumps;
+        _statistics.boolean_backtracks+=_cdcl_statistics.boolean_backtracks;
+        _statistics.boolean_decisions+=_cdcl_statistics.boolean_decisions;
+        _statistics.max_decision_level=std::max(
+            _statistics.max_decision_level,_cdcl_statistics.max_decision_level);
+        _statistics.peak_active_non_theory_learned_clauses=std::max(
+            _statistics.peak_active_non_theory_learned_clauses,
+            _cdcl_statistics.peak_active_non_theory_learned_clauses);
+        if(_cdcl_statistics.boolean_conflicts_analyzed!=0u) {
+            _statistics.last_learned_clause_literals=
+                _cdcl_statistics.last_learned_clause_literals;
+            _statistics.last_learned_current_level_literals=
+                _cdcl_statistics.last_learned_current_level_literals;
+            _statistics.last_backjump_level=_cdcl_statistics.last_backjump_level;
+        }
+    }
 
     std::optional<SearchOutcome> _propagate_child_outcome(
         SearchOutcome const& outcome,
@@ -2479,21 +2514,21 @@ class SmtDpllSearch : private SmtCdclState {
             SizeType conflict_level=this->_decision_level();
             ConflictAnalysis analysis=this->_analyze_boolean_conflict(
                 *_last_boolean_conflict_clause);
-            ++_statistics.boolean_conflicts_analyzed;
-            _statistics.learned_clause_literals+=analysis.learned_clause.size();
-            _statistics.last_learned_clause_literals=analysis.learned_clause.size();
-            _statistics.last_learned_current_level_literals=
+            ++_cdcl_statistics.boolean_conflicts_analyzed;
+            _cdcl_statistics.learned_clause_literals+=analysis.learned_clause.size();
+            _cdcl_statistics.last_learned_clause_literals=analysis.learned_clause.size();
+            _cdcl_statistics.last_learned_current_level_literals=
                 this->_current_level_literal_count(analysis.learned_clause);
-            _statistics.last_backjump_level=analysis.backjump_level;
+            _cdcl_statistics.last_backjump_level=analysis.backjump_level;
 
             SizeType learned_index=this->_add_learned_clause(analysis.learned_clause);
             _last_boolean_conflict_clause.reset();
 
             if(analysis.backjump_level+1u<conflict_level) {
-                ++_statistics.nonchronological_backjumps;
+                ++_cdcl_statistics.nonchronological_backjumps;
             }
             this->_backtrack_to_level(analysis.backjump_level);
-            ++_statistics.boolean_backtracks;
+            ++_cdcl_statistics.boolean_backtracks;
             this->_maybe_prune_learned_clauses(learned_index);
             return SearchOutcome::backjump(analysis.backjump_level);
         }
@@ -2516,26 +2551,26 @@ class SmtDpllSearch : private SmtCdclState {
             SizeType conflict_level=this->_decision_level();
             ConflictAnalysis analysis=this->_analyze_boolean_conflict(
                 *_last_theory_conflict_clause);
-            ++_statistics.boolean_conflicts_analyzed;
-            _statistics.learned_clause_literals+=analysis.learned_clause.size();
-            _statistics.last_learned_clause_literals=analysis.learned_clause.size();
-            _statistics.last_learned_current_level_literals=
+            ++_cdcl_statistics.boolean_conflicts_analyzed;
+            _cdcl_statistics.learned_clause_literals+=analysis.learned_clause.size();
+            _cdcl_statistics.last_learned_clause_literals=analysis.learned_clause.size();
+            _cdcl_statistics.last_learned_current_level_literals=
                 this->_current_level_literal_count(analysis.learned_clause);
-            _statistics.last_backjump_level=analysis.backjump_level;
+            _cdcl_statistics.last_backjump_level=analysis.backjump_level;
 
             SizeType learned_index=this->_add_learned_clause(analysis.learned_clause);
             _last_theory_conflict_clause.reset();
 
             if(analysis.backjump_level+1u<conflict_level) {
-                ++_statistics.nonchronological_backjumps;
+                ++_cdcl_statistics.nonchronological_backjumps;
             }
             this->_backtrack_to_level(analysis.backjump_level);
-            ++_statistics.boolean_backtracks;
+            ++_cdcl_statistics.boolean_backtracks;
             this->_maybe_prune_learned_clauses(learned_index);
             return SearchOutcome::backjump(analysis.backjump_level);
         }
 
-        ++_statistics.boolean_decisions;
+        ++_cdcl_statistics.boolean_decisions;
         SizeType parent_level=this->_decision_level();
 
         this->_push_decision_level();
@@ -2548,7 +2583,7 @@ class SmtDpllSearch : private SmtCdclState {
         }
 
         this->_backtrack_to_level(parent_level);
-        ++_statistics.boolean_backtracks;
+        ++_cdcl_statistics.boolean_backtracks;
 
         this->_push_decision_level();
         this->_assign_literal(BooleanLiteral(variable));
@@ -2560,7 +2595,7 @@ class SmtDpllSearch : private SmtCdclState {
         }
 
         this->_backtrack_to_level(parent_level);
-        ++_statistics.boolean_backtracks;
+        ++_cdcl_statistics.boolean_backtracks;
         return SearchOutcome::exhausted();
     }
 
@@ -2829,9 +2864,11 @@ class SmtDpllSearch : private SmtCdclState {
     SmtSolver const& _solver;
     RealSpace const& _space;
     ExactBoxType const& _domain;
+    SmtBooleanEncoding const& _encoding;
     Bool _parallel;
     std::optional<SizeType> _last_theory_conflict_clause;
     SmtUnknownReason _theory_unknown_reason = SmtUnknownReason::NONE;
+    SmtSearchStatistics _statistics;
 };
 } // namespace
 

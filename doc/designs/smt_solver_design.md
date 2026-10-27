@@ -4903,3 +4903,22 @@ Regression fixtures were migrated explicitly to the typed representation and
 new tests cover signed round trips, variable indices, negation, zero, `INT_MIN`,
 and the maximum representable identifier. The build and full CI still need
 to validate this change before any further refactoring.
+
+### 2026-10-27 - Isolate the theory-free CDCL state from SMT
+
+Following the green BooleanLiteral integration, the internal CDCL state no longer
+owns an `SmtBooleanEncoding` or an `SmtSearchStatistics`, nor calls SMT test helpers.
+It receives the zero-based variable count and immutable original Boolean clauses.
+A dedicated `CdclStatistics` struct records Boolean propagation, conflict, clause,
+trail and pruning counters. `SmtDpllSearch` owns the numerical statistics and
+merges the Boolean counters exactly once, on completion. The previously
+intentionally inactive learned-clause deletion remains inactive; selection
+logic is internal to the Boolean component. The Boolean core is still a
+protected-state component, not a finished standalone solver.
+
+A standalone `test_smt_cdcl_core` uses no theory objects, checking propagation,
+learned-clause conflicts, zero-based assignment, and backtracking. The SMT
+regressions remain responsible for theory nogoods, UNKNOWN propagation,
+statistics and certified witnesses. No theory semantics or search heuristics
+were intentionally changed. A full build and CI run are needed to validate
+this separation before considering a separate repository.
