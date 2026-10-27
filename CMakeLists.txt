@@ -21,6 +21,7 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
         CHAINS
             "configuration"
             "symbolic|configuration"
+            "cdcl|configuration"
     )
 endif()
 
@@ -35,14 +36,14 @@ target_include_directories(smt INTERFACE
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include/ariadne-smt>
 )
-target_link_libraries(smt INTERFACE symbolic)
+target_link_libraries(smt INTERFACE symbolic cdcl)
 
 add_subdirectory(src)
 target_link_libraries(SMT_SRC PRIVATE smt)
 
 ariadne_register_public_headers(
     TARGET smt
-    DIRECTORIES "${PROJECT_SOURCE_DIR}/include/smt" "${PROJECT_SOURCE_DIR}/include/cdcl"
+    DIRECTORIES "${PROJECT_SOURCE_DIR}/include/smt"
     FILES "${PROJECT_SOURCE_DIR}/include/ariadne-smt.hpp"
 )
 

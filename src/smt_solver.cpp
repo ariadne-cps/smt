@@ -24,6 +24,7 @@
 
 #include "smt/smt_solver.hpp"
 #include "cdcl/cdcl_state.hpp"
+#include "cdcl/cdcl_theory.hpp"
 
 #include <chrono>
 
@@ -2425,7 +2426,7 @@ Void accumulate_box_processing_statistics(
 
 namespace {
 
-class SmtDpllSearch : private CdclState {
+class SmtDpllSearch : private CdclState, private CdclTheory {
   public:
     SmtDpllSearch(SmtSolver const& solver,
                   RealSpace const& space,
@@ -2701,50 +2702,71 @@ class SmtDpllSearch : private CdclState {
         return clause;
     }
 
-    SizeType _learn_current_theory_nogood()
+    // CdclTheory callback: a certified numerical inconsistency is reported
+    // as a theory-entailment clause, but UNKNOWN is never a conflict.
+    CdclTheoryFeedback check_partial(CdclAssignment const& assignment) override
     {
-        std::vector<BooleanLiteral> clause=this->_current_theory_nogood();
-
-        SizeType raw_size=clause.size();
-        _statistics.theory_nogood_raw_literals+=raw_size;
-        clause=this->_minimize_theory_nogood(std::move(clause));
-        _statistics.theory_nogood_minimized_literals+=clause.size();
-        _statistics.theory_nogood_literals_removed+=raw_size-clause.size();
-
-        return this->_add_learned_clause(clause,true);
-    }
-
-    Bool _check_partial_theory_consistency()
-    {
-        _last_theory_conflict_clause.reset();
         std::vector<SmtTheoryAlternatives> alternatives;
         alternatives.reserve(_encoding.atom_count());
 
         for(SizeType i=0; i!=_encoding.atom_count(); ++i) {
             SizeType variable=_encoding.atom_variable(i);
-            if(_assignment[variable].value<0) {
+            if(not assignment[variable].has_value()) {
                 continue;
             }
 
             SmtTheoryLiteral literal=make_smt_theory_literal(_encoding.atom(i));
-            if(_assignment[variable].value==0) {
+            if(not *assignment[variable]) {
                 literal=literal.negated();
             }
             alternatives.push_back(normalize_smt_theory_literal(literal));
         }
 
         if(alternatives.empty()) {
-            return true;
+            return CdclTheoryFeedback::consistent();
         }
 
         ++_statistics.theory_checks;
         List<SmtTheoryPrimitiveLiteral> literals;
         Bool consistent=this->_theory_alternatives_consistent(alternatives,0u,literals);
         if(not consistent) {
+            // _theory_alternatives_consistent only reports false for a
+            // certified contradiction; unresolved numerical searches remain
+            // conservatively consistent or UNKNOWN.
             ++_statistics.theory_conflicts;
-            _last_theory_conflict_clause=this->_learn_current_theory_nogood();
+            std::vector<BooleanLiteral> clause=this->_current_theory_nogood();
+            SizeType raw_size=clause.size();
+            _statistics.theory_nogood_raw_literals+=raw_size;
+            clause=this->_minimize_theory_nogood(std::move(clause));
+            _statistics.theory_nogood_minimized_literals+=clause.size();
+            _statistics.theory_nogood_literals_removed+=raw_size-clause.size();
+            return CdclTheoryFeedback::conflict(std::move(clause));
         }
-        return consistent;
+        return _theory_unknown_reason==SmtUnknownReason::NONE
+            ? CdclTheoryFeedback::consistent()
+            : CdclTheoryFeedback::unknown();
+    }
+
+    Bool _check_partial_theory_consistency()
+    {
+        _last_theory_conflict_clause.reset();
+        CdclAssignment assignment(_assignment.size());
+        for(SizeType i=0u; i<_assignment.size(); ++i) {
+            if(_assignment[i].value>=0) {
+                assignment[i]=(_assignment[i].value==1);
+            }
+        }
+
+        CdclTheoryFeedback feedback=this->check_partial(assignment);
+        validate_cdcl_theory_feedback(feedback,assignment);
+        if(feedback.status()==CdclTheoryStatus::CONFLICT) {
+            _last_theory_conflict_clause=this->_add_learned_clause(
+                feedback.explanation(),true);
+            return false;
+        }
+        // CONSISTENT and UNKNOWN both retain the Boolean branch. The
+        // accumulated numerical UNKNOWN reason is handled on finalization.
+        return true;
     }
 
     SmtResult _solve_theory_literals(List<SmtTheoryPrimitiveLiteral> const& literals)

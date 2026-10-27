@@ -4938,3 +4938,23 @@ names in the reusable CDCL component. The solver and theory search semantics,
 clause learning and statistics are intentionally unchanged. The component is
 still housed inside the SMT repository until its public interaction interface
 is finalized and the full regressions pass.
+
+### 2026-10-27 - Move CDCL engine to its independent repository and bridge theory checks
+
+SMT now links to `ariadne-cps/cdcl` rather than building duplicated copies of
+`BooleanLiteral`, `CdclState` and `cdcl_state.cpp`. The new direct
+submodule is pinned to the initial independent engine with the same
+configuration revision as SMT and Symbolic.
+
+`SmtDpllSearch` implements the shared `CdclTheory::check_partial`
+callback. Its result explicitly distinguishes CONSISTENT, CONFLICT with a
+falsified explanation clause, and UNKNOWN. The consistency check still uses
+the original numerical pipeline and nogood minimization; only certified
+inconsistency can trigger learning. `validate_cdcl_theory_feedback` checks
+clause structure under the actual Boolean assignment before storing a
+theory-learned clause. UNKNOWN retains the branch and the accumulated SMT
+unknown reason; it is never interpreted as UNSAT.
+
+No changes were made to numerical box processing, heuristic branching,
+theory-minimization budgets or 1-UIP analysis. Installed-library packaging
+and all four CI families must pass to validate the integration.
