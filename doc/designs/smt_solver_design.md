@@ -5010,3 +5010,13 @@ The CDCL submodule has been advanced to include the fix that adds
 `test_cdcl_solver` to the `tests` build target. Previously CTest registered
 this test while sanitizer builds did not produce its executable.
 This changes test build coverage only; no CDCL or SMT semantics changed.
+
+### 2026-10-27 - Correct shared CDCL decision-level backtracking
+
+The shared CDCL engine's rollback boundary incorrectly used the start of the
+requested level, discarding assignments that should have remained at that
+level (including root-level propagation). Under a completion callback that
+rejects leaves, this could repeat the same branch indefinitely and overflow
+ThreadSanitizer's stack. The CDCL dependency is updated to the correction,
+which preserves assignments through the target decision level. Both the
+standalone solver and SMT will be validated by their normal CI workflows.
