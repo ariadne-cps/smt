@@ -13,7 +13,6 @@ foreach(TEST ${UNIT_TESTS})
     add_test(NAME ${TEST} COMMAND $<TARGET_FILE:${TEST}>)
     set_property(TEST ${TEST} PROPERTY LABELS "smt")
 endforeach()
-target_include_directories(test_smt_cdcl_core PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(test_smt_neural_benchmarks PRIVATE ${PROJECT_SOURCE_DIR}/benchmarks)
 target_compile_definitions(test_smt_neural_benchmarks PRIVATE
     ARIADNE_SMT_BARR3_DATA_PATH="${PROJECT_SOURCE_DIR}/benchmarks/data/smt_barr3_full64.bin")

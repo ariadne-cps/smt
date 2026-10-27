@@ -1,4 +1,5 @@
 add_library(SMT_SRC OBJECT
+    cdcl_state.cpp
     smt_solver.cpp
     smt_boolean.cpp
     smt_theory.cpp

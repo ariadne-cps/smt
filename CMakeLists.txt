@@ -42,7 +42,7 @@ target_link_libraries(SMT_SRC PRIVATE smt)
 
 ariadne_register_public_headers(
     TARGET smt
-    DIRECTORIES "${PROJECT_SOURCE_DIR}/include/smt"
+    DIRECTORIES "${PROJECT_SOURCE_DIR}/include/smt" "${PROJECT_SOURCE_DIR}/include/cdcl"
     FILES "${PROJECT_SOURCE_DIR}/include/ariadne-smt.hpp"
 )
 

@@ -34,7 +34,7 @@
 #include "numeric/numeric.hpp"
 #include "symbolic/expression.hpp"
 #include "smt/smt_theory.hpp"
-#include "smt/boolean_literal.hpp"
+#include "cdcl/boolean_literal.hpp"
 
 namespace Ariadne {
 

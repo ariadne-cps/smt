@@ -7,7 +7,7 @@
 
 #include <stdexcept>
 #include <vector>
-#include "smt_cdcl_state.hpp"
+#include "cdcl/cdcl_state.hpp"
 
 using namespace Ariadne;
 

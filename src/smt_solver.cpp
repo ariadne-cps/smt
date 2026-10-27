@@ -23,7 +23,7 @@
  */
 
 #include "smt/smt_solver.hpp"
-#include "smt_cdcl_state.hpp"
+#include "cdcl/cdcl_state.hpp"
 
 #include <chrono>
 

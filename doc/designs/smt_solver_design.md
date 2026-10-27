@@ -4922,3 +4922,19 @@ regressions remain responsible for theory nogoods, UNKNOWN propagation,
 statistics and certified witnesses. No theory semantics or search heuristics
 were intentionally changed. A full build and CI run are needed to validate
 this separation before considering a separate repository.
+
+### 2026-10-27 - Rename and split the isolated CDCL implementation
+
+The preceding interim `src/smt_cdcl_state.hpp` was misleading after the
+Boolean state ceased to depend on SMT. The component now has declarations in
+`include/cdcl/cdcl_state.hpp` and out-of-line member definitions in
+`src/cdcl_state.cpp`. The independent `BooleanLiteral` definition has also
+moved to `include/cdcl/boolean_literal.hpp`, with the previous SMT header
+retained as a compatibility forwarding include. All includes and CMake source,
+header-registration and test settings were updated accordingly.
+
+This fixes the transient header-only implementation and avoids exposing SMT
+names in the reusable CDCL component. The solver and theory search semantics,
+clause learning and statistics are intentionally unchanged. The component is
+still housed inside the SMT repository until its public interaction interface
+is finalized and the full regressions pass.
