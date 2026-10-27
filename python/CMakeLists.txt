@@ -12,6 +12,9 @@ if(Python3_FOUND)
     if(NOT TARGET pyariadne-symbolic)
         message(FATAL_ERROR "The Symbolic Python binding target is required to build pyariadne-smt.")
     endif()
+    if(NOT TARGET pyariadne-cdcl)
+        message(FATAL_ERROR "The CDCL Python binding target is required to build pyariadne-smt.")
+    endif()
 
     add_subdirectory(bindings)
 

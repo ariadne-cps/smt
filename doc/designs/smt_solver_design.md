@@ -4958,3 +4958,20 @@ unknown reason; it is never interpreted as UNSAT.
 No changes were made to numerical box processing, heuristic branching,
 theory-minimization budgets or 1-UIP analysis. Installed-library packaging
 and all four CI families must pass to validate the integration.
+
+### 2026-10-27 - Link transitive CDCL Python module objects
+
+The first standalone CDCL integration had registered `cdcl_module()` in the
+combined `pyariadne` entry source, but `pyariadne-smt` only linked the
+`pyariadne-symbolic` interface. Consequently the generated extension lacked
+`pyariadne-cdcl-module-obj`, producing an undefined `cdcl_module` symbol at
+import time on macOS/Linux (and a linker failure on Windows). This was a
+packaging/link-dependency bug, not a Boolean/theory algorithm issue.
+
+`pyariadne-smt` now links both `pyariadne-symbolic` and
+`pyariadne-cdcl` so the generated module entry's registered functions have
+matching object files. The Python CMake configuration checks for both targets,
+and the SMT Python regression now exercises a CDCL literal and an UNKNOWN
+theory-feedback result through the aggregated module. The existing installed
+module import check remains in Release CI. The complete CI must revalidate
+this fix; no C++ solver semantics changed.

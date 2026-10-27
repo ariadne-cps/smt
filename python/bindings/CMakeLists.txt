@@ -26,7 +26,13 @@ target_include_directories(pyariadne-smt INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<TARGET_PROPERTY:pyariadne-symbolic,INTERFACE_INCLUDE_DIRECTORIES>
 )
-target_link_libraries(pyariadne-smt INTERFACE pyariadne-symbolic)
+# The generated pyariadne entry calls both symbolic_module() and
+# cdcl_module(). Link both interface targets so their module object files
+# are included in the combined extension on every platform.
+target_link_libraries(pyariadne-smt INTERFACE
+    pyariadne-symbolic
+    pyariadne-cdcl
+)
 
 ariadne_add_python_module(
     NAME smt
