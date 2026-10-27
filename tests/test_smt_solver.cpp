@@ -1010,15 +1010,15 @@ class TestSmtSolver {
         std::vector<Int> resolved=SmtSolverTestSupport::resolve_clause_on_variable(
             std::vector<Int>({1,2,3,3}),
             std::vector<Int>({-1,3,4,4}),
-            1u);
+            0u);
         ARIADNE_TEST_EQUAL(resolved.size(),3u);
         ARIADNE_TEST_EQUAL(resolved[0],2);
         ARIADNE_TEST_EQUAL(resolved[1],3);
         ARIADNE_TEST_EQUAL(resolved[2],4);
 
         std::vector<Int> clause({1,-2,3,-4});
-        std::vector<SizeType> decision_levels({0u,1u,2u,2u,1u});
-        std::vector<SizeType> trail_rank({0u,1u,2u,4u,3u});
+        std::vector<SizeType> decision_levels({1u,2u,2u,1u});
+        std::vector<SizeType> trail_rank({1u,2u,4u,3u});
         SmtSolverTestSupport::order_theory_nogood(
             clause,decision_levels,trail_rank);
         ARIADNE_TEST_EQUAL(clause[0],3);

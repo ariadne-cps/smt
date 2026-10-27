@@ -23,6 +23,7 @@
  */
 
 #include "smt/smt_boolean.hpp"
+#include "smt_cdcl_state.hpp"
 
 #include <map>
 #include <optional>
@@ -169,7 +170,7 @@ class TseitinBuilder {
         for(SizeType i=0u; i!=_encoding.atom_count(); ++i) {
             if(identical(_encoding.atom(i),predicate)
                     || equivalent_theory_atoms(_encoding.atom(i),predicate)) {
-                Int variable=static_cast<Int>(_encoding.atom_variable(i));
+                Int variable=CdclLiteral(_encoding.atom_variable(i)).dimacs();
                 _atom_variables.emplace(key,variable);
                 return variable;
             }
@@ -177,7 +178,7 @@ class TseitinBuilder {
 
         Int variable=this->_new_variable();
         _atom_variables.emplace(key,variable);
-        _encoding._add_atom(predicate,static_cast<SizeType>(variable));
+        _encoding._add_atom(predicate,static_cast<SizeType>(variable-1));
         return variable;
     }
 

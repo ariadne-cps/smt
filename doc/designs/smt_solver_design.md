@@ -4857,3 +4857,26 @@ smoke test and standalone benchmark, together with the standard Unix,
 Windows, Coverage and Sanitizers CI, is required to validate the change.
 The prefix fixtures remain available as historical scaling inputs; currently
 they are not included by an active test target.
+
+### 2026-10-27 - Initial SMT-local CDCL extraction and zero-based identities
+
+The Boolean trail, decision levels, clause storage, unit propagation,
+conflict analysis, 1-UIP resolution, backjumping and learned-clause bookkeeping
+have moved from `SmtDpllSearch` into `src/smt_cdcl_state.hpp` as an
+SMT-local `SmtCdclState`. The derived search retains the theory-specific
+consistency and witness checks, nogood minimization and UNKNOWN handling.
+The core is intentionally still dependent on SMT statistics and encoding;
+it is **not yet** a separately reusable `ariadne-cps/cdcl` package.
+
+Variable identities used for trail, assignments, reason lookup and
+theory-atom associations are now **zero-based**. The Tseitin CNF clause format
+remains signed one-based DIMACS integers at its boundary, with explicit
+`CdclLiteral` conversion and validation (zero and INT_MIN rejected).
+Thus signed +/-1 refers to logical variable 0. SMT theory atoms now expose
+zero-based indices; regression helper fixtures use zero-based arrays.
+The zero-based selector returns `variable_count()` as its no-variable sentinel.
+
+No theory inference is moved into the Boolean core: a numerical UNKNOWN still
+must not be converted into a learned conflict. No new CDCL heuristics,
+two-watched-literals or restarts are introduced in this step.
+The previous test suite must pass before extracting a standalone CDCL repo.

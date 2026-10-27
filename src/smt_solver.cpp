@@ -23,6 +23,7 @@
  */
 
 #include "smt/smt_solver.hpp"
+#include "smt_cdcl_state.hpp"
 
 #include <chrono>
 
@@ -64,7 +65,7 @@ namespace {
 
 SizeType variable_from_literal(Int literal)
 {
-    return static_cast<SizeType>(std::abs(literal));
+    return cdcl_variable_from_literal(literal);
 }
 
 class SequentialSmtWorkQueue {
@@ -2429,24 +2430,19 @@ Void accumulate_box_processing_statistics(
 
 namespace {
 
-class SmtDpllSearch {
+class SmtDpllSearch : private SmtCdclState {
   public:
     SmtDpllSearch(SmtSolver const& solver,
                   RealSpace const& space,
                   ExactBoxType const& domain,
                   SmtBooleanEncoding const& encoding,
                   Bool parallel)
-        : _solver(solver),
+        : SmtCdclState(encoding,solver.configuration().learned_clause_limit()),
+          _solver(solver),
           _space(space),
           _domain(domain),
-          _encoding(encoding),
-          _parallel(parallel),
-          _assignment(encoding.variable_count()+1u)
-    {
-        _trail.reserve(encoding.variable_count());
-        _decision_level_markers.reserve(encoding.variable_count()+1u);
-        _decision_level_markers.push_back(0u);
-    }
+          _parallel(parallel)
+    { }
 
     SmtResult solve()
     {
@@ -2460,315 +2456,6 @@ class SmtDpllSearch {
 
   private:
     using SearchOutcome=SmtSolverTestSupport::SearchOutcome;
-
-    struct AssignmentInfo {
-        int8_t value = -1;
-        SizeType decision_level = 0u;
-        std::optional<SizeType> reason_clause;
-    };
-
-    struct ConflictAnalysis {
-        std::vector<Int> learned_clause;
-        SizeType backjump_level = 0u;
-    };
-
-    Bool _literal_true(Int literal) const
-    {
-        SizeType variable=variable_from_literal(literal);
-        int8_t value=_assignment[variable].value;
-        int8_t expected_value=static_cast<int8_t>(literal>0);
-        return value==expected_value;
-    }
-
-    Void _assign_literal(Int literal, std::optional<SizeType> reason_clause = std::nullopt)
-    {
-        SizeType variable=variable_from_literal(literal);
-        int8_t value=static_cast<int8_t>(literal>0);
-        AssignmentInfo& assignment=_assignment[variable];
-        assignment.value=value;
-        assignment.decision_level=this->_decision_level();
-        assignment.reason_clause=reason_clause;
-        _trail.push_back(variable);
-    }
-
-    SizeType _original_clause_count() const
-    {
-        return _encoding.clauses().size();
-    }
-
-    SizeType _clause_count() const
-    {
-        return this->_original_clause_count()+_learned_clauses.size();
-    }
-
-    SmtBooleanEncoding::Clause const& _clause(SizeType index) const
-    {
-        if(index<this->_original_clause_count()) {
-            return _encoding.clauses()[index];
-        }
-        return _learned_clauses[index-this->_original_clause_count()];
-    }
-
-    Bool _is_learned_clause(SizeType index) const
-    {
-        return SmtSolverTestSupport::clause_is_learned(
-            index,this->_original_clause_count());
-    }
-
-    SizeType _add_learned_clause(std::vector<Int> const& clause, Bool theory_clause = false)
-    {
-        _learned_clauses.emplace_back(clause.begin(),clause.end());
-        _learned_clause_is_theory.push_back(theory_clause);
-        _learned_clause_activity.push_back(1u);
-        _learned_clause_generation.push_back(_statistics.learned_clauses);
-        ++_statistics.learned_clauses;
-        if(theory_clause) {
-            ++_statistics.theory_learned_clauses;
-            _statistics.theory_learned_clause_literals+=clause.size();
-        } else {
-            _statistics.peak_active_non_theory_learned_clauses=std::max(
-                _statistics.peak_active_non_theory_learned_clauses,
-                this->_active_non_theory_learned_clause_count());
-        }
-        return this->_original_clause_count()+_learned_clauses.size()-1u;
-    }
-
-    Bool _is_theory_learned_clause(SizeType index) const
-    {
-        return SmtSolverTestSupport::learned_clause_is_theory(
-            index,this->_original_clause_count(),_learned_clause_is_theory);
-    }
-
-    SizeType _active_non_theory_learned_clause_count() const
-    {
-        SizeType count=0u;
-        for(SizeType i=0u; i<_learned_clauses.size(); ++i) {
-            if(not _learned_clause_is_theory[i]) {
-                ++count;
-            }
-        }
-        return count;
-    }
-
-    Bool _learned_clause_locked(SizeType index) const
-    {
-        for(AssignmentInfo const& assignment:_assignment) {
-            if(SmtSolverTestSupport::assignment_locks_clause(
-                    assignment.value,assignment.reason_clause,index)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    Void _bump_learned_clause_activity(SizeType index)
-    {
-        if(not this->_is_learned_clause(index)) {
-            return;
-        }
-        SizeType learned_index=index-this->_original_clause_count();
-        ++_learned_clause_activity[learned_index];
-        ++_statistics.learned_clause_activity_bumps;
-    }
-
-    Void _maybe_prune_learned_clauses(SizeType protected_clause)
-    {
-        SizeType const limit=_solver.configuration().learned_clause_limit();
-        SizeType active=this->_active_non_theory_learned_clause_count();
-        if(active<=limit) {
-            return;
-        }
-
-        ++_statistics.learned_clause_pruning_runs;
-        std::vector<SmtSolverTestSupport::LearnedClausePruningEntry> entries;
-        entries.reserve(_learned_clauses.size());
-        for(SizeType i=0u; i<_learned_clauses.size(); ++i) {
-            SizeType clause_index=this->_original_clause_count()+i;
-            SizeType const current_generation=_statistics.learned_clauses;
-            SizeType const clause_generation=_learned_clause_generation[i];
-            entries.push_back({
-                true,
-                _learned_clause_is_theory[i],
-                current_generation<=clause_generation+2u,
-                _learned_clauses[i].size()<=2u,
-                _learned_clause_activity[i]>1u,
-                clause_index==protected_clause,
-                this->_learned_clause_locked(clause_index),
-                _learned_clause_activity[i],
-                _learned_clauses[i].size()
-            });
-        }
-        std::vector<SizeType> candidates=
-            SmtSolverTestSupport::learned_clause_pruning_candidates(entries);
-
-        _statistics.learned_clauses_pruned+=
-            SmtSolverTestSupport::apply_learned_clause_pruning(
-                candidates,active,limit);
-    }
-
-    Bool _unit_propagate()
-    {
-        _last_boolean_conflict_clause.reset();
-        Bool changed=true;
-        while(changed) {
-            changed=false;
-            for(SizeType clause_index=0u; clause_index<this->_clause_count(); ++clause_index) {
-                auto const& clause=this->_clause(clause_index);
-                Bool satisfied=false;
-                SizeType unassigned_count=0u;
-                Int unit_literal=0;
-
-                for(Int literal:clause) {
-                    SizeType variable=variable_from_literal(literal);
-                    int8_t value=_assignment[variable].value;
-                    if(value<0) {
-                        ++unassigned_count;
-                        unit_literal=literal;
-                    } else if(this->_literal_true(literal)) {
-                        satisfied=true;
-                        break;
-                    }
-                }
-
-                if(satisfied) {
-                    continue;
-                }
-
-                if(unassigned_count==0u) {
-                    ++_statistics.boolean_conflicts;
-                    this->_bump_learned_clause_activity(clause_index);
-                    _last_boolean_conflict_clause=clause_index;
-                    return false;
-                }
-
-                if(unassigned_count==1u) {
-                    this->_assign_literal(unit_literal,clause_index);
-                    ++_statistics.boolean_propagations;
-                    ++_statistics.boolean_reasoned_propagations;
-                    if(this->_is_learned_clause(clause_index)) {
-                        this->_bump_learned_clause_activity(clause_index);
-                        ++_statistics.learned_clause_propagations;
-                        if(this->_is_theory_learned_clause(clause_index)) {
-                            ++_statistics.theory_learned_clause_propagations;
-                        }
-                    }
-                    changed=true;
-                }
-            }
-        }
-        return true;
-    }
-
-    Bool _clause_contains_variable(std::vector<Int> const& clause, SizeType variable) const
-    {
-        for(Int literal:clause) {
-            SizeType literal_variable=variable_from_literal(literal);
-            if(literal_variable==variable) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    SizeType _current_level_literal_count(std::vector<Int> const& clause) const
-    {
-        SizeType count=0u;
-        for(Int literal:clause) {
-            SizeType variable=variable_from_literal(literal);
-            if(_assignment[variable].decision_level==this->_decision_level()) {
-                ++count;
-            }
-        }
-        return count;
-    }
-
-    std::vector<Int> _resolve_on_variable(
-        std::vector<Int> const& lhs,
-        SmtBooleanEncoding::Clause const& rhs,
-        SizeType variable) const
-    {
-        return SmtSolverTestSupport::resolve_clause_on_variable(lhs,rhs,variable);
-    }
-
-    ConflictAnalysis _analyze_boolean_conflict(SizeType conflict_clause_index)
-    {
-        this->_bump_learned_clause_activity(conflict_clause_index);
-        ConflictAnalysis analysis;
-        auto const& conflict_clause=this->_clause(conflict_clause_index);
-        analysis.learned_clause.assign(conflict_clause.begin(),conflict_clause.end());
-
-        while(this->_current_level_literal_count(analysis.learned_clause)>1u) {
-            auto iter=_trail.rbegin();
-            for(;;) {
-                SizeType pivot_variable=*iter;
-                AssignmentInfo const& assignment=_assignment[pivot_variable];
-                Bool const current_level=
-                    assignment.decision_level==this->_decision_level();
-                Bool const has_reason=assignment.reason_clause.has_value();
-                Bool const appears_in_clause=this->_clause_contains_variable(
-                    analysis.learned_clause,pivot_variable);
-                Bool const resolvable=
-                    static_cast<unsigned>(current_level)
-                    & static_cast<unsigned>(has_reason)
-                    & static_cast<unsigned>(appears_in_clause);
-                if(resolvable) {
-                    SizeType reason_index=*assignment.reason_clause;
-                    this->_bump_learned_clause_activity(reason_index);
-                    analysis.learned_clause=this->_resolve_on_variable(
-                        analysis.learned_clause,
-                        this->_clause(reason_index),
-                        pivot_variable);
-                    break;
-                }
-                ++iter;
-            }
-        }
-
-        SizeType current_level=this->_decision_level();
-        SizeType backjump_level=0u;
-        for(Int literal:analysis.learned_clause) {
-            SizeType variable=variable_from_literal(literal);
-            SizeType level=_assignment[variable].decision_level;
-            if(level!=current_level) {
-                backjump_level=std::max(backjump_level,level);
-            }
-        }
-        analysis.backjump_level=backjump_level;
-        return analysis;
-    }
-
-    SizeType _next_unassigned_variable() const
-    {
-        for(SizeType variable=1u; variable<=_encoding.variable_count(); ++variable) {
-            if(_assignment[variable].value<0) {
-                return variable;
-            }
-        }
-        return 0u;
-    }
-
-    SizeType _decision_level() const
-    {
-        return _decision_level_markers.size()-1u;
-    }
-
-    Void _push_decision_level()
-    {
-        _decision_level_markers.push_back(_trail.size());
-        _statistics.max_decision_level=std::max(
-            _statistics.max_decision_level,this->_decision_level());
-    }
-
-    Void _backtrack_to_level(SizeType level)
-    {
-        SizeType marker=_decision_level_markers[level];
-        while(_trail.size()>marker) {
-            SizeType variable=_trail.back();
-            _trail.pop_back();
-            _assignment[variable]=AssignmentInfo();
-        }
-        _decision_level_markers.resize(level+1u);
-    }
 
     std::optional<SearchOutcome> _propagate_child_outcome(
         SearchOutcome const& outcome,
@@ -2817,7 +2504,7 @@ class SmtDpllSearch {
         }
 
         SizeType variable=this->_next_unassigned_variable();
-        if(variable==0u) {
+        if(variable==_encoding.variable_count()) {
             std::optional<UpperBoxType> witness=this->_check_theory_assignment();
             if(witness.has_value()) {
                 return SearchOutcome::found(*witness);
@@ -2857,7 +2544,7 @@ class SmtDpllSearch {
         SizeType parent_level=this->_decision_level();
 
         this->_push_decision_level();
-        this->_assign_literal(-static_cast<Int>(variable));
+        this->_assign_literal(CdclLiteral(variable,false).dimacs());
 
         SearchOutcome first=this->_search_boolean();
         if(auto outcome=this->_propagate_child_outcome(first,parent_level);
@@ -2869,7 +2556,7 @@ class SmtDpllSearch {
         ++_statistics.boolean_backtracks;
 
         this->_push_decision_level();
-        this->_assign_literal(static_cast<Int>(variable));
+        this->_assign_literal(CdclLiteral(variable).dimacs());
 
         SearchOutcome second=this->_search_boolean();
         if(auto outcome=this->_propagate_child_outcome(second,parent_level);
@@ -2894,7 +2581,7 @@ class SmtDpllSearch {
                 continue;
             }
 
-            Int literal=static_cast<Int>(variable);
+            Int literal=CdclLiteral(variable).dimacs();
             if(assignment.value==1) {
                 literal=-literal;
             }
@@ -2954,7 +2641,7 @@ class SmtDpllSearch {
             clause,decision_levels,trail_rank);
 
         SizeType first_variable=
-            static_cast<SizeType>(std::abs(clause.front()));
+            cdcl_variable_from_literal(clause.front());
         SmtSolverTestSupport::record_first_minimization_candidate_trail_rank(
             _statistics,trail_rank[first_variable]);
 
@@ -3147,19 +2834,9 @@ class SmtDpllSearch {
     SmtSolver const& _solver;
     RealSpace const& _space;
     ExactBoxType const& _domain;
-    SmtBooleanEncoding const& _encoding;
     Bool _parallel;
-    std::vector<AssignmentInfo> _assignment;
-    std::vector<SizeType> _trail;
-    std::vector<SizeType> _decision_level_markers;
-    std::vector<SmtBooleanEncoding::Clause> _learned_clauses;
-    std::vector<Bool> _learned_clause_is_theory;
-    std::vector<SizeType> _learned_clause_activity;
-    std::vector<SizeType> _learned_clause_generation;
-    std::optional<SizeType> _last_boolean_conflict_clause;
     std::optional<SizeType> _last_theory_conflict_clause;
     SmtUnknownReason _theory_unknown_reason = SmtUnknownReason::NONE;
-    SmtSearchStatistics _statistics;
 };
 } // namespace
 

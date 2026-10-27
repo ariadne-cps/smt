@@ -59,7 +59,7 @@ class TestSmtBoolean {
         ARIADNE_TEST_EQUAL(encoding.clauses().size(),1u);
         ARIADNE_TEST_EQUAL(encoding.clauses()[0].size(),1u);
         ARIADNE_TEST_EQUAL(encoding.clauses()[0][0],1);
-        ARIADNE_TEST_EQUAL(encoding.atom_variable(0),1u);
+        ARIADNE_TEST_EQUAL(encoding.atom_variable(0),0u);
         ARIADNE_TEST_EQUAL(encoding.atom(0).code(),OperatorCode::LEQ);
     }
 
@@ -202,7 +202,7 @@ class TestSmtBoolean {
         ARIADNE_TEST_EQUAL(encoding.clauses().size(),1u);
         ARIADNE_TEST_EQUAL(encoding.clauses()[0].size(),1u);
         ARIADNE_TEST_EQUAL(encoding.clauses()[0][0],1);
-        ARIADNE_TEST_EQUAL(encoding.atom_variable(0),1u);
+        ARIADNE_TEST_EQUAL(encoding.atom_variable(0),0u);
         ARIADNE_TEST_EQUAL(encoding.atom(0).code(),OperatorCode::SGN);
     }
 
@@ -273,7 +273,7 @@ class TestSmtBoolean {
         ARIADNE_TEST_EQUAL(encoding.atom_count(),1u);
         ARIADNE_TEST_EQUAL(encoding.variable_count(),2u);
         ARIADNE_TEST_EQUAL(encoding.clauses().size(),4u);
-        ARIADNE_TEST_EQUAL(encoding.atom_variable(0),1u);
+        ARIADNE_TEST_EQUAL(encoding.atom_variable(0),0u);
     }
 
     Void test_semantically_shared_atom() {

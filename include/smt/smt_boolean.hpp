@@ -49,8 +49,8 @@ class TseitinBuilder;
 //! \ingroup Solvers
 //! \brief A CNF encoding of a continuous predicate.
 //!
-//! SAT variables are numbered from one. Positive integers denote positive
-//! literals and negative integers denote negated literals.
+//! Logical variable indices are zero-based. Clauses retain signed DIMACS
+//! integer literals (+1/-1 correspond to variable 0) at the encoder boundary.
 class SmtBooleanEncoding {
   public:
     using Literal = Int;
@@ -61,6 +61,7 @@ class SmtBooleanEncoding {
     SizeType atom_count() const { return _atoms.size(); }
 
     ContinuousPredicate const& atom(SizeType i) const { return _atoms[i]; }
+    //! \brief Zero-based Boolean variable index for theory atom i.
     SizeType atom_variable(SizeType i) const { return _atom_variables[i]; }
 
   private:
