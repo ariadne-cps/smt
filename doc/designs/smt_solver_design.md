@@ -4993,3 +4993,13 @@ CDCL dependency pin was updated together with the SMT integration.
 Any unknown numerical outcome is retained rather than converted into a
 learned conflict or an UNSAT result. The CI matrix must validate the
 cross-repository refactor, including the Python extension.
+
+### 2026-10-27 - Complete-assignment CDCL(T) callback correction
+
+The standalone `CdclSolver` now checks its theory oracle even when all
+Boolean variables are assigned, preventing missed theory conflicts in generic
+clients. SMT retains its existing separate certified full-assignment theory
+search; therefore the SMT partial callback returns provisional CONSISTENT
+for a completed assignment and delegates certification to the completion
+callback. This preserves the original numerical checking order and statistics.
+The CDCL submodule pin was updated to the corrected implementation.

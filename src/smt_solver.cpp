@@ -2609,6 +2609,12 @@ class SmtCdclSearch : private CdclSolver, private CdclTheory {
     // as a theory-entailment clause, but UNKNOWN is never a conflict.
     CdclTheoryFeedback check_partial(CdclAssignment const& assignment) override
     {
+        // The full-model completion callback performs the certified theory
+        // search. Avoid a redundant partial check on complete assignments.
+        if(std::all_of(assignment.begin(),assignment.end(),
+               [](std::optional<Bool> const& value) { return value.has_value(); })) {
+            return CdclTheoryFeedback::consistent();
+        }
         std::vector<SmtTheoryAlternatives> alternatives;
         alternatives.reserve(_encoding.atom_count());
 
