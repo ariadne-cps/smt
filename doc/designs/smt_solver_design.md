@@ -4975,3 +4975,21 @@ and the SMT Python regression now exercises a CDCL literal and an UNKNOWN
 theory-feedback result through the aggregated module. The existing installed
 module import check remains in Release CI. The complete CI must revalidate
 this fix; no C++ solver semantics changed.
+
+### 2026-10-27 - Delegate complete Boolean search to shared CdclSolver
+
+SMT's former `SmtDpllSearch` has been renamed `SmtCdclSearch`, and the
+recursive `_search_boolean` driver, conflict analysis orchestration and
+backjump dispatch have been removed from SMT. The new `CdclSolver` in
+`ariadne-cps/cdcl` owns these operations and accepts two integrations:
+`CdclTheory::check_partial` for theory conflicts and a complete-assignment
+callback for a certified numerical witness. The SMT adapter retains its
+original theory checks, nogood minimization, UNKNOWN reason aggregation,
+box processing and full-model certification.
+
+Boolean search and statistics now come from the shared CDCL implementation,
+including the same false-first branching and unit propagation order. The
+CDCL dependency pin was updated together with the SMT integration.
+Any unknown numerical outcome is retained rather than converted into a
+learned conflict or an UNSAT result. The CI matrix must validate the
+cross-repository refactor, including the Python extension.

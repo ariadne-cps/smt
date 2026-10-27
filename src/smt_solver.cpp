@@ -23,7 +23,7 @@
  */
 
 #include "smt/smt_solver.hpp"
-#include "cdcl/cdcl_state.hpp"
+#include "cdcl/cdcl_solver.hpp"
 #include "cdcl/cdcl_theory.hpp"
 
 #include <chrono>
@@ -2426,14 +2426,14 @@ Void accumulate_box_processing_statistics(
 
 namespace {
 
-class SmtDpllSearch : private CdclState, private CdclTheory {
+class SmtCdclSearch : private CdclSolver, private CdclTheory {
   public:
-    SmtDpllSearch(SmtSolver const& solver,
+    SmtCdclSearch(SmtSolver const& solver,
                   RealSpace const& space,
                   ExactBoxType const& domain,
                   SmtBooleanEncoding const& encoding,
                   Bool parallel)
-        : CdclState(encoding.variable_count(),encoding.clauses(),
+        : CdclSolver(encoding.variable_count(),encoding.clauses(),
                     solver.configuration().learned_clause_limit()),
           _solver(solver),
           _space(space),
@@ -2447,15 +2447,30 @@ class SmtDpllSearch : private CdclState, private CdclTheory {
         if(_domain.is_empty()) {
             return SmtResult::unsat(_statistics);
         }
-        SmtSolverTestSupport::SearchOutcome outcome=this->_search_boolean();
+        CdclSolveStatus const status=CdclSolver::solve(
+            this,[this](CdclAssignment const&) {
+                _certified_witness=this->_check_theory_assignment();
+                if(_certified_witness.has_value()) {
+                    return CdclCompletionStatus::CERTIFIED;
+                }
+                return _theory_unknown_reason==SmtUnknownReason::NONE
+                    ? CdclCompletionStatus::REJECTED
+                    : CdclCompletionStatus::UNKNOWN;
+            });
         this->_merge_cdcl_statistics();
-        return SmtSolverTestSupport::finalize_search_outcome(
-            outcome,_theory_unknown_reason,_statistics);
+        if(status==CdclSolveStatus::SAT) {
+            return SmtResult::epsilon_sat(*_certified_witness,_statistics);
+        }
+        if(_theory_unknown_reason!=SmtUnknownReason::NONE) {
+            return SmtResult::unknown(_theory_unknown_reason,_statistics);
+        }
+        if(status==CdclSolveStatus::UNKNOWN) {
+            return SmtResult::unknown(SmtUnknownReason::RESOURCE_EXHAUSTED,_statistics);
+        }
+        return SmtResult::unsat(_statistics);
     }
 
   private:
-    using SearchOutcome=SmtSolverTestSupport::SearchOutcome;
-
     Void _merge_cdcl_statistics()
     {
         _statistics.learned_clauses+=_cdcl_statistics.learned_clauses;
@@ -2486,118 +2501,6 @@ class SmtDpllSearch : private CdclState, private CdclTheory {
                 _cdcl_statistics.last_learned_current_level_literals;
             _statistics.last_backjump_level=_cdcl_statistics.last_backjump_level;
         }
-    }
-
-    std::optional<SearchOutcome> _propagate_child_outcome(
-        SearchOutcome const& outcome,
-        SizeType parent_level)
-    {
-        if(outcome.witness.has_value()) {
-            return outcome;
-        }
-        if(outcome.backjump_level.has_value()) {
-            if(*outcome.backjump_level<parent_level) {
-                return outcome;
-            }
-            return this->_search_boolean();
-        }
-        return std::nullopt;
-    }
-
-    SearchOutcome _search_boolean()
-    {
-        if(not this->_unit_propagate()) {
-            if(this->_decision_level()==0u) {
-                _last_boolean_conflict_clause.reset();
-                return SearchOutcome::exhausted();
-            }
-
-            SizeType conflict_level=this->_decision_level();
-            ConflictAnalysis analysis=this->_analyze_boolean_conflict(
-                *_last_boolean_conflict_clause);
-            ++_cdcl_statistics.boolean_conflicts_analyzed;
-            _cdcl_statistics.learned_clause_literals+=analysis.learned_clause.size();
-            _cdcl_statistics.last_learned_clause_literals=analysis.learned_clause.size();
-            _cdcl_statistics.last_learned_current_level_literals=
-                this->_current_level_literal_count(analysis.learned_clause);
-            _cdcl_statistics.last_backjump_level=analysis.backjump_level;
-
-            SizeType learned_index=this->_add_learned_clause(analysis.learned_clause);
-            _last_boolean_conflict_clause.reset();
-
-            if(analysis.backjump_level+1u<conflict_level) {
-                ++_cdcl_statistics.nonchronological_backjumps;
-            }
-            this->_backtrack_to_level(analysis.backjump_level);
-            ++_cdcl_statistics.boolean_backtracks;
-            this->_maybe_prune_learned_clauses(learned_index);
-            return SearchOutcome::backjump(analysis.backjump_level);
-        }
-
-        SizeType variable=this->_next_unassigned_variable();
-        if(variable==_encoding.variable_count()) {
-            std::optional<UpperBoxType> witness=this->_check_theory_assignment();
-            if(witness.has_value()) {
-                return SearchOutcome::found(*witness);
-            }
-            return SearchOutcome::exhausted();
-        }
-
-        if(not this->_check_partial_theory_consistency()) {
-            if(this->_decision_level()==0u) {
-                _last_theory_conflict_clause.reset();
-                return SearchOutcome::exhausted();
-            }
-
-            SizeType conflict_level=this->_decision_level();
-            ConflictAnalysis analysis=this->_analyze_boolean_conflict(
-                *_last_theory_conflict_clause);
-            ++_cdcl_statistics.boolean_conflicts_analyzed;
-            _cdcl_statistics.learned_clause_literals+=analysis.learned_clause.size();
-            _cdcl_statistics.last_learned_clause_literals=analysis.learned_clause.size();
-            _cdcl_statistics.last_learned_current_level_literals=
-                this->_current_level_literal_count(analysis.learned_clause);
-            _cdcl_statistics.last_backjump_level=analysis.backjump_level;
-
-            SizeType learned_index=this->_add_learned_clause(analysis.learned_clause);
-            _last_theory_conflict_clause.reset();
-
-            if(analysis.backjump_level+1u<conflict_level) {
-                ++_cdcl_statistics.nonchronological_backjumps;
-            }
-            this->_backtrack_to_level(analysis.backjump_level);
-            ++_cdcl_statistics.boolean_backtracks;
-            this->_maybe_prune_learned_clauses(learned_index);
-            return SearchOutcome::backjump(analysis.backjump_level);
-        }
-
-        ++_cdcl_statistics.boolean_decisions;
-        SizeType parent_level=this->_decision_level();
-
-        this->_push_decision_level();
-        this->_assign_literal(BooleanLiteral(variable,false));
-
-        SearchOutcome first=this->_search_boolean();
-        if(auto outcome=this->_propagate_child_outcome(first,parent_level);
-           outcome.has_value()) {
-            return *outcome;
-        }
-
-        this->_backtrack_to_level(parent_level);
-        ++_cdcl_statistics.boolean_backtracks;
-
-        this->_push_decision_level();
-        this->_assign_literal(BooleanLiteral(variable));
-
-        SearchOutcome second=this->_search_boolean();
-        if(auto outcome=this->_propagate_child_outcome(second,parent_level);
-           outcome.has_value()) {
-            return *outcome;
-        }
-
-        this->_backtrack_to_level(parent_level);
-        ++_cdcl_statistics.boolean_backtracks;
-        return SearchOutcome::exhausted();
     }
 
     std::vector<BooleanLiteral> _current_theory_nogood() const
@@ -2747,28 +2650,6 @@ class SmtDpllSearch : private CdclState, private CdclTheory {
             : CdclTheoryFeedback::unknown();
     }
 
-    Bool _check_partial_theory_consistency()
-    {
-        _last_theory_conflict_clause.reset();
-        CdclAssignment assignment(_assignment.size());
-        for(SizeType i=0u; i<_assignment.size(); ++i) {
-            if(_assignment[i].value>=0) {
-                assignment[i]=(_assignment[i].value==1);
-            }
-        }
-
-        CdclTheoryFeedback feedback=this->check_partial(assignment);
-        validate_cdcl_theory_feedback(feedback,assignment);
-        if(feedback.status()==CdclTheoryStatus::CONFLICT) {
-            _last_theory_conflict_clause=this->_add_learned_clause(
-                feedback.explanation(),true);
-            return false;
-        }
-        // CONSISTENT and UNKNOWN both retain the Boolean branch. The
-        // accumulated numerical UNKNOWN reason is handled on finalization.
-        return true;
-    }
-
     SmtResult _solve_theory_literals(List<SmtTheoryPrimitiveLiteral> const& literals)
     {
         SizeType const limit=_solver.configuration().box_processing_limit();
@@ -2888,7 +2769,7 @@ class SmtDpllSearch : private CdclState, private CdclTheory {
     ExactBoxType const& _domain;
     SmtBooleanEncoding const& _encoding;
     Bool _parallel;
-    std::optional<SizeType> _last_theory_conflict_clause;
+    std::optional<UpperBoxType> _certified_witness;
     SmtUnknownReason _theory_unknown_reason = SmtUnknownReason::NONE;
     SmtSearchStatistics _statistics;
 };
@@ -2902,7 +2783,7 @@ SmtResult SmtSolver::solve(RealSpace const& space,
     ARIADNE_PRECONDITION(space.size()==domain.dimension());
 
     SmtBooleanEncoding encoding=SmtBooleanEncoder().encode(predicate);
-    return SmtDpllSearch(*this,space,domain,encoding,false).solve();
+    return SmtCdclSearch(*this,space,domain,encoding,false).solve();
 }
 
 SmtResult SmtSolver::solve_parallel(RealSpace const& space,
@@ -2913,7 +2794,7 @@ SmtResult SmtSolver::solve_parallel(RealSpace const& space,
     ARIADNE_PRECONDITION(space.size()==domain.dimension());
 
     SmtBooleanEncoding encoding=SmtBooleanEncoder().encode(predicate);
-    return SmtDpllSearch(*this,space,domain,encoding,true).solve();
+    return SmtCdclSearch(*this,space,domain,encoding,true).solve();
 }
 
 } // namespace Ariadne
