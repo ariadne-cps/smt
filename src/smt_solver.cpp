@@ -63,11 +63,6 @@ inline double elapsed_seconds(
 
 namespace {
 
-SizeType variable_from_literal(Int literal)
-{
-    return cdcl_variable_from_literal(literal);
-}
-
 class SequentialSmtWorkQueue {
   public:
     Void push(UpperBoxType box) { _boxes.push_back(std::move(box)); }
@@ -2133,20 +2128,20 @@ Void validate_primitive_relation(SmtTheoryPrimitiveRelation relation)
     }
 }
 
-std::vector<Int> resolve_clause_on_variable(
-    std::vector<Int> const& lhs,
-    std::vector<Int> const& rhs,
+std::vector<BooleanLiteral> resolve_clause_on_variable(
+    std::vector<BooleanLiteral> const& lhs,
+    std::vector<BooleanLiteral> const& rhs,
     SizeType variable)
 {
-    std::vector<Int> result;
+    std::vector<BooleanLiteral> result;
     result.reserve(lhs.size()+rhs.size());
 
-    auto append_unique=[&](Int literal) {
-        SizeType literal_variable=variable_from_literal(literal);
+    auto append_unique=[&](BooleanLiteral literal) {
+        SizeType literal_variable=literal.variable();
         if(literal_variable==variable) {
             return;
         }
-        for(Int existing:result) {
+        for(BooleanLiteral existing:result) {
             if(existing==literal) {
                 return;
             }
@@ -2154,20 +2149,20 @@ std::vector<Int> resolve_clause_on_variable(
         result.push_back(literal);
     };
 
-    for(Int literal:lhs) { append_unique(literal); }
-    for(Int literal:rhs) { append_unique(literal); }
+    for(BooleanLiteral literal:lhs) { append_unique(literal); }
+    for(BooleanLiteral literal:rhs) { append_unique(literal); }
     return result;
 }
 
 Void order_theory_nogood(
-    std::vector<Int>& clause,
+    std::vector<BooleanLiteral>& clause,
     std::vector<SizeType> const& decision_levels,
     std::vector<SizeType> const& trail_rank)
 {
     std::stable_sort(clause.begin(),clause.end(),
-        [&decision_levels,&trail_rank](Int lhs, Int rhs) {
-            SizeType lhs_variable=variable_from_literal(lhs);
-            SizeType rhs_variable=variable_from_literal(rhs);
+        [&decision_levels,&trail_rank](BooleanLiteral lhs, BooleanLiteral rhs) {
+            SizeType lhs_variable=lhs.variable();
+            SizeType rhs_variable=rhs.variable();
             SizeType lhs_level=decision_levels[lhs_variable];
             SizeType rhs_level=decision_levels[rhs_variable];
             if(lhs_level!=rhs_level) {
@@ -2544,7 +2539,7 @@ class SmtDpllSearch : private SmtCdclState {
         SizeType parent_level=this->_decision_level();
 
         this->_push_decision_level();
-        this->_assign_literal(CdclLiteral(variable,false).dimacs());
+        this->_assign_literal(BooleanLiteral(variable,false));
 
         SearchOutcome first=this->_search_boolean();
         if(auto outcome=this->_propagate_child_outcome(first,parent_level);
@@ -2556,7 +2551,7 @@ class SmtDpllSearch : private SmtCdclState {
         ++_statistics.boolean_backtracks;
 
         this->_push_decision_level();
-        this->_assign_literal(CdclLiteral(variable).dimacs());
+        this->_assign_literal(BooleanLiteral(variable));
 
         SearchOutcome second=this->_search_boolean();
         if(auto outcome=this->_propagate_child_outcome(second,parent_level);
@@ -2569,9 +2564,9 @@ class SmtDpllSearch : private SmtCdclState {
         return SearchOutcome::exhausted();
     }
 
-    std::vector<Int> _current_theory_nogood() const
+    std::vector<BooleanLiteral> _current_theory_nogood() const
     {
-        std::vector<Int> clause;
+        std::vector<BooleanLiteral> clause;
         clause.reserve(_encoding.atom_count());
 
         for(SizeType i=0u; i!=_encoding.atom_count(); ++i) {
@@ -2581,9 +2576,9 @@ class SmtDpllSearch : private SmtCdclState {
                 continue;
             }
 
-            Int literal=CdclLiteral(variable).dimacs();
+            BooleanLiteral literal(variable);
             if(assignment.value==1) {
-                literal=-literal;
+                literal=literal.negation();
             }
 
             clause.push_back(literal);
@@ -2593,13 +2588,13 @@ class SmtDpllSearch : private SmtCdclState {
     }
 
     std::vector<SmtTheoryAlternatives> _theory_alternatives_for_nogood(
-        std::vector<Int> const& clause) const
+        std::vector<BooleanLiteral> const& clause) const
     {
         std::vector<SmtTheoryAlternatives> alternatives;
         alternatives.reserve(clause.size());
 
-        for(Int nogood_literal:clause) {
-            SizeType variable=variable_from_literal(nogood_literal);
+        for(BooleanLiteral nogood_literal:clause) {
+            SizeType variable=nogood_literal.variable();
 
             SizeType atom_index=0u;
             while(_encoding.atom_variable(atom_index)!=variable) {
@@ -2607,7 +2602,7 @@ class SmtDpllSearch : private SmtCdclState {
             }
 
             SmtTheoryLiteral literal=make_smt_theory_literal(_encoding.atom(atom_index));
-            Bool assignment_value=nogood_literal<0;
+            Bool assignment_value=not nogood_literal.positive();
             if(not assignment_value) {
                 literal=literal.negated();
             }
@@ -2617,7 +2612,7 @@ class SmtDpllSearch : private SmtCdclState {
         return alternatives;
     }
 
-    Bool _nogood_theory_consistent(std::vector<Int> const& clause)
+    Bool _nogood_theory_consistent(std::vector<BooleanLiteral> const& clause)
     {
         ++_statistics.theory_minimization_checks;
         std::vector<SmtTheoryAlternatives> alternatives=
@@ -2626,7 +2621,7 @@ class SmtDpllSearch : private SmtCdclState {
         return this->_theory_alternatives_consistent(alternatives,0u,literals);
     }
 
-    std::vector<Int> _minimize_theory_nogood(std::vector<Int> clause)
+    std::vector<BooleanLiteral> _minimize_theory_nogood(std::vector<BooleanLiteral> clause)
     {
         std::vector<SizeType> trail_rank(_assignment.size(),0u);
         for(SizeType rank=0u; rank<_trail.size(); ++rank) {
@@ -2641,7 +2636,7 @@ class SmtDpllSearch : private SmtCdclState {
             clause,decision_levels,trail_rank);
 
         SizeType first_variable=
-            cdcl_variable_from_literal(clause.front());
+            clause.front().variable();
         SmtSolverTestSupport::record_first_minimization_candidate_trail_rank(
             _statistics,trail_rank[first_variable]);
 
@@ -2654,7 +2649,7 @@ class SmtDpllSearch : private SmtCdclState {
                 break;
             }
 
-            std::vector<Int> candidate=clause;
+            std::vector<BooleanLiteral> candidate=clause;
             candidate.erase(candidate.begin()+static_cast<std::ptrdiff_t>(i));
             if(candidate.empty()) {
                 ++i;
@@ -2673,7 +2668,7 @@ class SmtDpllSearch : private SmtCdclState {
 
     SizeType _learn_current_theory_nogood()
     {
-        std::vector<Int> clause=this->_current_theory_nogood();
+        std::vector<BooleanLiteral> clause=this->_current_theory_nogood();
 
         SizeType raw_size=clause.size();
         _statistics.theory_nogood_raw_literals+=raw_size;

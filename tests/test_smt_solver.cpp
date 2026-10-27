@@ -1007,24 +1007,28 @@ class TestSmtSolver {
     Void test_cdcl_helpers() {
         std::cout << "[smt-cdcl] deterministic clause resolution and nogood ordering" << std::endl;
 
-        std::vector<Int> resolved=SmtSolverTestSupport::resolve_clause_on_variable(
-            std::vector<Int>({1,2,3,3}),
-            std::vector<Int>({-1,3,4,4}),
-            0u);
+        auto lit=[](Int signed_literal) {
+            return BooleanLiteral::from_dimacs(signed_literal);
+        };
+        std::vector<BooleanLiteral> resolved=
+            SmtSolverTestSupport::resolve_clause_on_variable(
+                std::vector<BooleanLiteral>({lit(1),lit(2),lit(3),lit(3)}),
+                std::vector<BooleanLiteral>({lit(-1),lit(3),lit(4),lit(4)}),
+                0u);
         ARIADNE_TEST_EQUAL(resolved.size(),3u);
-        ARIADNE_TEST_EQUAL(resolved[0],2);
-        ARIADNE_TEST_EQUAL(resolved[1],3);
-        ARIADNE_TEST_EQUAL(resolved[2],4);
+        ARIADNE_TEST_EQUAL(resolved[0].dimacs(),2);
+        ARIADNE_TEST_EQUAL(resolved[1].dimacs(),3);
+        ARIADNE_TEST_EQUAL(resolved[2].dimacs(),4);
 
-        std::vector<Int> clause({1,-2,3,-4});
+        std::vector<BooleanLiteral> clause({lit(1),lit(-2),lit(3),lit(-4)});
         std::vector<SizeType> decision_levels({1u,2u,2u,1u});
         std::vector<SizeType> trail_rank({1u,2u,4u,3u});
         SmtSolverTestSupport::order_theory_nogood(
             clause,decision_levels,trail_rank);
-        ARIADNE_TEST_EQUAL(clause[0],3);
-        ARIADNE_TEST_EQUAL(clause[1],-2);
-        ARIADNE_TEST_EQUAL(clause[2],-4);
-        ARIADNE_TEST_EQUAL(clause[3],1);
+        ARIADNE_TEST_EQUAL(clause[0].dimacs(),3);
+        ARIADNE_TEST_EQUAL(clause[1].dimacs(),-2);
+        ARIADNE_TEST_EQUAL(clause[2].dimacs(),-4);
+        ARIADNE_TEST_EQUAL(clause[3].dimacs(),1);
 
         {
             std::cout << "[smt-theory-propagation] validated atom classification" << std::endl;

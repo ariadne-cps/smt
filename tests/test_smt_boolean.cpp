@@ -23,6 +23,7 @@
  */
 
 #include "numeric/numeric.hpp"
+#include <limits>
 #include "smt/smt_boolean.hpp"
 #include "symbolic/variable.hpp"
 
@@ -33,6 +34,7 @@ using namespace Ariadne;
 class TestSmtBoolean {
   public:
     Void test() {
+        ARIADNE_TEST_CALL(test_boolean_literal());
         ARIADNE_TEST_CALL(test_atom());
         ARIADNE_TEST_CALL(test_constants());
         ARIADNE_TEST_CALL(test_invalid_inputs());
@@ -47,6 +49,32 @@ class TestSmtBoolean {
     }
 
   private:
+    Void test_boolean_literal() {
+        BooleanLiteral positive(0u);
+        BooleanLiteral negative(0u,false);
+        ARIADNE_TEST_EQUAL(positive.variable(),0u);
+        ARIADNE_TEST_EQUAL(positive.dimacs(),1);
+        ARIADNE_TEST_ASSERT(positive.positive());
+        ARIADNE_TEST_EQUAL(negative.variable(),0u);
+        ARIADNE_TEST_EQUAL(negative.dimacs(),-1);
+        ARIADNE_TEST_ASSERT(not negative.positive());
+        ARIADNE_TEST_ASSERT(-positive==negative);
+        ARIADNE_TEST_ASSERT(-negative==positive);
+        ARIADNE_TEST_EQUAL(BooleanLiteral::from_dimacs(2).variable(),1u);
+        ARIADNE_TEST_EQUAL(BooleanLiteral::from_dimacs(-2).variable(),1u);
+        ARIADNE_TEST_EQUAL(BooleanLiteral::from_dimacs(-2).dimacs(),-2);
+        ARIADNE_TEST_THROWS(BooleanLiteral::from_dimacs(0),std::out_of_range);
+        ARIADNE_TEST_THROWS(
+            BooleanLiteral::from_dimacs(std::numeric_limits<Int>::min()),
+            std::out_of_range);
+        ARIADNE_TEST_THROWS(
+            BooleanLiteral(static_cast<SizeType>(std::numeric_limits<Int>::max())),
+            std::out_of_range);
+        ARIADNE_TEST_EQUAL(
+            BooleanLiteral(static_cast<SizeType>(std::numeric_limits<Int>::max())-1u).dimacs(),
+            std::numeric_limits<Int>::max());
+    }
+
     Void test_atom() {
         RealVariable x("x");
         ContinuousPredicate predicate=(x<=0);
@@ -58,7 +86,7 @@ class TestSmtBoolean {
         ARIADNE_TEST_EQUAL(encoding.variable_count(),1u);
         ARIADNE_TEST_EQUAL(encoding.clauses().size(),1u);
         ARIADNE_TEST_EQUAL(encoding.clauses()[0].size(),1u);
-        ARIADNE_TEST_EQUAL(encoding.clauses()[0][0],1);
+        ARIADNE_TEST_EQUAL(encoding.clauses()[0][0].dimacs(),1);
         ARIADNE_TEST_EQUAL(encoding.atom_variable(0),0u);
         ARIADNE_TEST_EQUAL(encoding.atom(0).code(),OperatorCode::LEQ);
     }
@@ -71,8 +99,8 @@ class TestSmtBoolean {
             ARIADNE_TEST_EQUAL(encoding.variable_count(),1u);
             ARIADNE_TEST_EQUAL(encoding.clauses().size(),2u);
             ARIADNE_TEST_EQUAL(encoding.clauses()[0].size(),1u);
-            ARIADNE_TEST_EQUAL(encoding.clauses()[0][0],1);
-            ARIADNE_TEST_EQUAL(encoding.clauses()[1][0],1);
+            ARIADNE_TEST_EQUAL(encoding.clauses()[0][0].dimacs(),1);
+            ARIADNE_TEST_EQUAL(encoding.clauses()[1][0].dimacs(),1);
         }
 
         {
@@ -82,8 +110,8 @@ class TestSmtBoolean {
             ARIADNE_TEST_EQUAL(encoding.variable_count(),1u);
             ARIADNE_TEST_EQUAL(encoding.clauses().size(),2u);
             ARIADNE_TEST_EQUAL(encoding.clauses()[0].size(),1u);
-            ARIADNE_TEST_EQUAL(encoding.clauses()[0][0],-1);
-            ARIADNE_TEST_EQUAL(encoding.clauses()[1][0],1);
+            ARIADNE_TEST_EQUAL(encoding.clauses()[0][0].dimacs(),-1);
+            ARIADNE_TEST_EQUAL(encoding.clauses()[1][0].dimacs(),1);
         }
 
         {
@@ -95,7 +123,7 @@ class TestSmtBoolean {
             ARIADNE_TEST_EQUAL(encoding.atom_count(),1u);
             ARIADNE_TEST_EQUAL(encoding.variable_count(),1u);
             ARIADNE_TEST_EQUAL(encoding.clauses().size(),1u);
-            ARIADNE_TEST_EQUAL(encoding.clauses()[0][0],1);
+            ARIADNE_TEST_EQUAL(encoding.clauses()[0][0].dimacs(),1);
         }
 
         {
@@ -108,8 +136,8 @@ class TestSmtBoolean {
             ARIADNE_TEST_EQUAL(and_false.atom_count(),0u);
             ARIADNE_TEST_EQUAL(and_false.variable_count(),1u);
             ARIADNE_TEST_EQUAL(and_false.clauses().size(),2u);
-            ARIADNE_TEST_EQUAL(and_false.clauses()[0][0],-1);
-            ARIADNE_TEST_EQUAL(and_false.clauses()[1][0],1);
+            ARIADNE_TEST_EQUAL(and_false.clauses()[0][0].dimacs(),-1);
+            ARIADNE_TEST_EQUAL(and_false.clauses()[1][0].dimacs(),1);
 
             std::cout << "[smt-boolean] fold true||atom" << std::endl;
             SmtBooleanEncoding or_true=SmtBooleanEncoder().encode(
@@ -117,8 +145,8 @@ class TestSmtBoolean {
             ARIADNE_TEST_EQUAL(or_true.atom_count(),0u);
             ARIADNE_TEST_EQUAL(or_true.variable_count(),1u);
             ARIADNE_TEST_EQUAL(or_true.clauses().size(),2u);
-            ARIADNE_TEST_EQUAL(or_true.clauses()[0][0],1);
-            ARIADNE_TEST_EQUAL(or_true.clauses()[1][0],1);
+            ARIADNE_TEST_EQUAL(or_true.clauses()[0][0].dimacs(),1);
+            ARIADNE_TEST_EQUAL(or_true.clauses()[1][0].dimacs(),1);
 
             std::cout << "[smt-boolean] fold atom&&true" << std::endl;
             SmtBooleanEncoding and_true_rhs=SmtBooleanEncoder().encode(
@@ -126,7 +154,7 @@ class TestSmtBoolean {
             ARIADNE_TEST_EQUAL(and_true_rhs.atom_count(),1u);
             ARIADNE_TEST_EQUAL(and_true_rhs.variable_count(),1u);
             ARIADNE_TEST_EQUAL(and_true_rhs.clauses().size(),1u);
-            ARIADNE_TEST_EQUAL(and_true_rhs.clauses()[0][0],1);
+            ARIADNE_TEST_EQUAL(and_true_rhs.clauses()[0][0].dimacs(),1);
 
             std::cout << "[smt-boolean] fold atom&&false" << std::endl;
             SmtBooleanEncoding and_false_rhs=SmtBooleanEncoder().encode(
@@ -134,8 +162,8 @@ class TestSmtBoolean {
             ARIADNE_TEST_EQUAL(and_false_rhs.atom_count(),0u);
             ARIADNE_TEST_EQUAL(and_false_rhs.variable_count(),1u);
             ARIADNE_TEST_EQUAL(and_false_rhs.clauses().size(),2u);
-            ARIADNE_TEST_EQUAL(and_false_rhs.clauses()[0][0],-1);
-            ARIADNE_TEST_EQUAL(and_false_rhs.clauses()[1][0],1);
+            ARIADNE_TEST_EQUAL(and_false_rhs.clauses()[0][0].dimacs(),-1);
+            ARIADNE_TEST_EQUAL(and_false_rhs.clauses()[1][0].dimacs(),1);
 
             std::cout << "[smt-boolean] fold atom||true" << std::endl;
             SmtBooleanEncoding or_true_rhs=SmtBooleanEncoder().encode(
@@ -143,8 +171,8 @@ class TestSmtBoolean {
             ARIADNE_TEST_EQUAL(or_true_rhs.atom_count(),0u);
             ARIADNE_TEST_EQUAL(or_true_rhs.variable_count(),1u);
             ARIADNE_TEST_EQUAL(or_true_rhs.clauses().size(),2u);
-            ARIADNE_TEST_EQUAL(or_true_rhs.clauses()[0][0],1);
-            ARIADNE_TEST_EQUAL(or_true_rhs.clauses()[1][0],1);
+            ARIADNE_TEST_EQUAL(or_true_rhs.clauses()[0][0].dimacs(),1);
+            ARIADNE_TEST_EQUAL(or_true_rhs.clauses()[1][0].dimacs(),1);
 
             std::cout << "[smt-boolean] fold atom||false" << std::endl;
             SmtBooleanEncoding or_false_rhs=SmtBooleanEncoder().encode(
@@ -152,7 +180,7 @@ class TestSmtBoolean {
             ARIADNE_TEST_EQUAL(or_false_rhs.atom_count(),1u);
             ARIADNE_TEST_EQUAL(or_false_rhs.variable_count(),1u);
             ARIADNE_TEST_EQUAL(or_false_rhs.clauses().size(),1u);
-            ARIADNE_TEST_EQUAL(or_false_rhs.clauses()[0][0],1);
+            ARIADNE_TEST_EQUAL(or_false_rhs.clauses()[0][0].dimacs(),1);
 
             std::cout << "[smt-boolean] fold negated constant" << std::endl;
             SmtBooleanEncoding negated=SmtBooleanEncoder().encode(
@@ -160,8 +188,8 @@ class TestSmtBoolean {
             ARIADNE_TEST_EQUAL(negated.atom_count(),0u);
             ARIADNE_TEST_EQUAL(negated.variable_count(),1u);
             ARIADNE_TEST_EQUAL(negated.clauses().size(),2u);
-            ARIADNE_TEST_EQUAL(negated.clauses()[0][0],1);
-            ARIADNE_TEST_EQUAL(negated.clauses()[1][0],1);
+            ARIADNE_TEST_EQUAL(negated.clauses()[0][0].dimacs(),1);
+            ARIADNE_TEST_EQUAL(negated.clauses()[1][0].dimacs(),1);
         }
     }
 
@@ -201,7 +229,7 @@ class TestSmtBoolean {
         ARIADNE_TEST_EQUAL(encoding.variable_count(),1u);
         ARIADNE_TEST_EQUAL(encoding.clauses().size(),1u);
         ARIADNE_TEST_EQUAL(encoding.clauses()[0].size(),1u);
-        ARIADNE_TEST_EQUAL(encoding.clauses()[0][0],1);
+        ARIADNE_TEST_EQUAL(encoding.clauses()[0][0].dimacs(),1);
         ARIADNE_TEST_EQUAL(encoding.atom_variable(0),0u);
         ARIADNE_TEST_EQUAL(encoding.atom(0).code(),OperatorCode::SGN);
     }
@@ -216,7 +244,7 @@ class TestSmtBoolean {
         ARIADNE_TEST_EQUAL(encoding.atom_count(),1u);
         ARIADNE_TEST_EQUAL(encoding.variable_count(),1u);
         ARIADNE_TEST_EQUAL(encoding.clauses().size(),1u);
-        ARIADNE_TEST_EQUAL(encoding.clauses()[0][0],-1);
+        ARIADNE_TEST_EQUAL(encoding.clauses()[0][0].dimacs(),-1);
     }
 
     Void test_conjunction() {

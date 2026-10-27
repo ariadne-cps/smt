@@ -34,6 +34,7 @@
 #include "numeric/numeric.hpp"
 #include "symbolic/expression.hpp"
 #include "smt/smt_theory.hpp"
+#include "smt/boolean_literal.hpp"
 
 namespace Ariadne {
 
@@ -50,10 +51,10 @@ class TseitinBuilder;
 //! \brief A CNF encoding of a continuous predicate.
 //!
 //! Logical variable indices are zero-based. Clauses retain signed DIMACS
-//! integer literals (+1/-1 correspond to variable 0) at the encoder boundary.
+//! integer values (+1/-1 correspond to variable 0) via explicit DIMACS conversion.
 class SmtBooleanEncoding {
   public:
-    using Literal = Int;
+    using Literal = BooleanLiteral;
     using Clause = std::vector<Literal>;
 
     std::vector<Clause> const& clauses() const { return _clauses; }
@@ -69,9 +70,10 @@ class SmtBooleanEncoding {
     friend class TseitinBuilder;
 
     Void _add_clause(Clause clause) { _clauses.push_back(std::move(clause)); }
-    Int _new_variable() {
+    Literal _new_variable() {
+        Literal result(_variable_count);
         ++_variable_count;
-        return static_cast<Int>(_variable_count);
+        return result;
     }
     Void _add_atom(ContinuousPredicate const& atom, SizeType variable) {
         _atoms.push_back(atom);

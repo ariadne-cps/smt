@@ -478,13 +478,13 @@ DirectBoxProcessingObservation process_compiled_box(
 
 Void validate_primitive_relation(SmtTheoryPrimitiveRelation relation);
 
-std::vector<Int> resolve_clause_on_variable(
-    std::vector<Int> const& lhs,
-    std::vector<Int> const& rhs,
+std::vector<BooleanLiteral> resolve_clause_on_variable(
+    std::vector<BooleanLiteral> const& lhs,
+    std::vector<BooleanLiteral> const& rhs,
     SizeType variable);
 
 Void order_theory_nogood(
-    std::vector<Int>& clause,
+    std::vector<BooleanLiteral>& clause,
     std::vector<SizeType> const& decision_levels,
     std::vector<SizeType> const& trail_rank);
 

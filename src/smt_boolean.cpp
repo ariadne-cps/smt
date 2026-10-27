@@ -23,7 +23,7 @@
  */
 
 #include "smt/smt_boolean.hpp"
-#include "smt_cdcl_state.hpp"
+
 
 #include <map>
 #include <optional>
@@ -124,13 +124,13 @@ Bool equivalent_theory_atoms(ContinuousPredicate const& lhs,
 class TseitinBuilder {
   public:
     SmtBooleanEncoding build(ContinuousPredicate const& predicate) {
-        Int root=this->_encode(predicate);
+        BooleanLiteral root=this->_encode(predicate);
         _encoding._add_clause({root});
         return _encoding;
     }
 
   private:
-    Int _new_variable() {
+    BooleanLiteral _new_variable() {
         return _encoding._new_variable();
     }
 
@@ -150,8 +150,8 @@ class TseitinBuilder {
         return result;
     }
 
-    Int _encode_constant(ContinuousPredicate const& predicate) {
-        Int variable=this->_new_variable();
+    BooleanLiteral _encode_constant(ContinuousPredicate const& predicate) {
+        BooleanLiteral variable=this->_new_variable();
         Kleenean const& value=predicate.val();
         if(not definitely(value) && not definitely(!value)) {
             fail_indeterminate_smt_constant();
@@ -160,7 +160,7 @@ class TseitinBuilder {
         return variable;
     }
 
-    Int _encode_atom(ContinuousPredicate const& predicate) {
+    BooleanLiteral _encode_atom(ContinuousPredicate const& predicate) {
         const Void* key=static_cast<const Void*>(predicate.node_raw_ptr());
         auto iter=_atom_variables.find(key);
         if(iter!=_atom_variables.end()) {
@@ -170,19 +170,19 @@ class TseitinBuilder {
         for(SizeType i=0u; i!=_encoding.atom_count(); ++i) {
             if(identical(_encoding.atom(i),predicate)
                     || equivalent_theory_atoms(_encoding.atom(i),predicate)) {
-                Int variable=CdclLiteral(_encoding.atom_variable(i)).dimacs();
+                BooleanLiteral variable(_encoding.atom_variable(i));
                 _atom_variables.emplace(key,variable);
                 return variable;
             }
         }
 
-        Int variable=this->_new_variable();
+        BooleanLiteral variable=this->_new_variable();
         _atom_variables.emplace(key,variable);
-        _encoding._add_atom(predicate,static_cast<SizeType>(variable-1));
+        _encoding._add_atom(predicate,variable.variable());
         return variable;
     }
 
-    Int _encode(ContinuousPredicate const& predicate) {
+    BooleanLiteral _encode(ContinuousPredicate const& predicate) {
         OperatorCode code=predicate.code();
         SmtBooleanTestSupport::supported_operator(code);
 
@@ -220,9 +220,9 @@ class TseitinBuilder {
                                   : this->_encode_constant(ContinuousPredicate(false));
             }
 
-            Int lhs=this->_encode(predicate.arg1());
-            Int rhs=this->_encode(predicate.arg2());
-            Int variable=this->_new_variable();
+            BooleanLiteral lhs=this->_encode(predicate.arg1());
+            BooleanLiteral rhs=this->_encode(predicate.arg2());
+            BooleanLiteral variable=this->_new_variable();
 
             _encoding._add_clause({-variable,lhs});
             _encoding._add_clause({-variable,rhs});
@@ -241,9 +241,9 @@ class TseitinBuilder {
                               : this->_encode(predicate.arg1());
         }
 
-        Int lhs=this->_encode(predicate.arg1());
-        Int rhs=this->_encode(predicate.arg2());
-        Int variable=this->_new_variable();
+        BooleanLiteral lhs=this->_encode(predicate.arg1());
+        BooleanLiteral rhs=this->_encode(predicate.arg2());
+        BooleanLiteral variable=this->_new_variable();
 
         _encoding._add_clause({variable,-lhs});
         _encoding._add_clause({variable,-rhs});
@@ -252,7 +252,7 @@ class TseitinBuilder {
     }
 
     SmtBooleanEncoding _encoding;
-    std::map<const Void*,Int> _atom_variables;
+    std::map<const Void*,BooleanLiteral> _atom_variables;
 };
 
 SmtBooleanEncoding SmtBooleanEncoder::encode(ContinuousPredicate const& predicate) const

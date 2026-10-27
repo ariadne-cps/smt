@@ -19,45 +19,9 @@
 #include <stdexcept>
 #include <vector>
 #include "smt/smt_solver.hpp"
+#include "smt/boolean_literal.hpp"
 
 namespace Ariadne {
-
-//! \brief Zero-based logical variable identity stored in signed DIMACS form.
-//! \details The signed value is a serialization detail: +1/-1 mean variable 0.
-class CdclLiteral {
-  public:
-    explicit CdclLiteral(SizeType variable, Bool positive=true)
-    {
-        if(variable>=static_cast<SizeType>(std::numeric_limits<Int>::max())) {
-            throw std::out_of_range("CDCL variable exceeds signed literal range");
-        }
-        Int magnitude=static_cast<Int>(variable+1u);
-        _dimacs=positive ? magnitude : -magnitude;
-    }
-
-    static CdclLiteral from_dimacs(Int value) {
-        if(value==0 or value==std::numeric_limits<Int>::min()) {
-            throw std::out_of_range("Invalid signed CDCL literal");
-        }
-        return CdclLiteral(value,RawTag{});
-    }
-
-    SizeType variable() const {
-        return static_cast<SizeType>(_dimacs<0 ? -_dimacs : _dimacs)-1u;
-    }
-    Bool positive() const { return _dimacs>0; }
-    Int dimacs() const { return _dimacs; }
-    CdclLiteral negation() const { return CdclLiteral(-_dimacs,RawTag{}); }
-
-  private:
-    struct RawTag { };
-    CdclLiteral(Int value,RawTag) : _dimacs(value) { }
-    Int _dimacs;
-};
-
-inline SizeType cdcl_variable_from_literal(Int literal) {
-    return CdclLiteral::from_dimacs(literal).variable();
-}
 
 //! \brief Propositional CDCL trail, clauses, unit propagation and 1-UIP analysis.
 //! \details Transitional SMT-local implementation. No theory checking happens here;
@@ -81,22 +45,22 @@ class SmtCdclState {
     };
 
     struct ConflictAnalysis {
-        std::vector<Int> learned_clause;
+        std::vector<BooleanLiteral> learned_clause;
         SizeType backjump_level = 0u;
     };
 
-    Bool _literal_true(Int literal) const
+    Bool _literal_true(BooleanLiteral literal) const
     {
-        SizeType variable=cdcl_variable_from_literal(literal);
+        SizeType variable=literal.variable();
         int8_t value=_assignment[variable].value;
-        int8_t expected_value=static_cast<int8_t>(literal>0);
+        int8_t expected_value=static_cast<int8_t>(literal.positive());
         return value==expected_value;
     }
 
-    Void _assign_literal(Int literal, std::optional<SizeType> reason_clause = std::nullopt)
+    Void _assign_literal(BooleanLiteral literal, std::optional<SizeType> reason_clause = std::nullopt)
     {
-        SizeType variable=cdcl_variable_from_literal(literal);
-        int8_t value=static_cast<int8_t>(literal>0);
+        SizeType variable=literal.variable();
+        int8_t value=static_cast<int8_t>(literal.positive());
         AssignmentInfo& assignment=_assignment[variable];
         assignment.value=value;
         assignment.decision_level=this->_decision_level();
@@ -128,7 +92,7 @@ class SmtCdclState {
             index,this->_original_clause_count());
     }
 
-    SizeType _add_learned_clause(std::vector<Int> const& clause, Bool theory_clause = false)
+    SizeType _add_learned_clause(std::vector<BooleanLiteral> const& clause, Bool theory_clause = false)
     {
         _learned_clauses.emplace_back(clause.begin(),clause.end());
         _learned_clause_is_theory.push_back(theory_clause);
@@ -229,10 +193,10 @@ class SmtCdclState {
                 auto const& clause=this->_clause(clause_index);
                 Bool satisfied=false;
                 SizeType unassigned_count=0u;
-                Int unit_literal=0;
+                std::optional<BooleanLiteral> unit_literal;
 
-                for(Int literal:clause) {
-                    SizeType variable=cdcl_variable_from_literal(literal);
+                for(BooleanLiteral literal:clause) {
+                    SizeType variable=literal.variable();
                     int8_t value=_assignment[variable].value;
                     if(value<0) {
                         ++unassigned_count;
@@ -255,7 +219,7 @@ class SmtCdclState {
                 }
 
                 if(unassigned_count==1u) {
-                    this->_assign_literal(unit_literal,clause_index);
+                    this->_assign_literal(*unit_literal,clause_index);
                     ++_statistics.boolean_propagations;
                     ++_statistics.boolean_reasoned_propagations;
                     if(this->_is_learned_clause(clause_index)) {
@@ -272,10 +236,10 @@ class SmtCdclState {
         return true;
     }
 
-    Bool _clause_contains_variable(std::vector<Int> const& clause, SizeType variable) const
+    Bool _clause_contains_variable(std::vector<BooleanLiteral> const& clause, SizeType variable) const
     {
-        for(Int literal:clause) {
-            SizeType literal_variable=cdcl_variable_from_literal(literal);
+        for(BooleanLiteral literal:clause) {
+            SizeType literal_variable=literal.variable();
             if(literal_variable==variable) {
                 return true;
             }
@@ -283,11 +247,11 @@ class SmtCdclState {
         return false;
     }
 
-    SizeType _current_level_literal_count(std::vector<Int> const& clause) const
+    SizeType _current_level_literal_count(std::vector<BooleanLiteral> const& clause) const
     {
         SizeType count=0u;
-        for(Int literal:clause) {
-            SizeType variable=cdcl_variable_from_literal(literal);
+        for(BooleanLiteral literal:clause) {
+            SizeType variable=literal.variable();
             if(_assignment[variable].decision_level==this->_decision_level()) {
                 ++count;
             }
@@ -295,8 +259,8 @@ class SmtCdclState {
         return count;
     }
 
-    std::vector<Int> _resolve_on_variable(
-        std::vector<Int> const& lhs,
+    std::vector<BooleanLiteral> _resolve_on_variable(
+        std::vector<BooleanLiteral> const& lhs,
         SmtBooleanEncoding::Clause const& rhs,
         SizeType variable) const
     {
@@ -339,8 +303,8 @@ class SmtCdclState {
 
         SizeType current_level=this->_decision_level();
         SizeType backjump_level=0u;
-        for(Int literal:analysis.learned_clause) {
-            SizeType variable=cdcl_variable_from_literal(literal);
+        for(BooleanLiteral literal:analysis.learned_clause) {
+            SizeType variable=literal.variable();
             SizeType level=_assignment[variable].decision_level;
             if(level!=current_level) {
                 backjump_level=std::max(backjump_level,level);

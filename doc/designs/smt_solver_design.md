@@ -4880,3 +4880,26 @@ No theory inference is moved into the Boolean core: a numerical UNKNOWN still
 must not be converted into a learned conflict. No new CDCL heuristics,
 two-watched-literals or restarts are introduced in this step.
 The previous test suite must pass before extracting a standalone CDCL repo.
+
+### 2026-10-27 - Strong zero-based BooleanLiteral throughout the SMT Boolean path
+
+After the preceding SMT-local CDCL extraction passed all four workflow families,
+the temporary `CdclLiteral` wrapper was replaced by the public, standalone
+`include/smt/boolean_literal.hpp` strong type `BooleanLiteral`, with a
+single signed `Int` field. API variables remain zero-based; conversion to
+signed, one-based DIMACS integers is explicit using `dimacs()` and
+`from_dimacs()`. Zero and `INT_MIN` are invalid inputs, and construction
+rejects variables above the representable signed-literal range. Operators
+negation and equality preserve the sign and identity invariants.
+
+The Tseitin encoder now builds `BooleanLiteral` objects directly. Both original
+and learned CDCL clauses, resolution, propagation, theory nogoods, and
+theory-nogood ordering use `std::vector<BooleanLiteral>` rather than raw
+`std::vector<Int>`. The assignment trail and theory atom indices remain
+zero-based. This makes the eventual standalone CDCL extraction simpler while
+leaving validated theory semantics and UNKNOWN handling untouched.
+
+Regression fixtures were migrated explicitly to the typed representation and
+new tests cover signed round trips, variable indices, negation, zero, `INT_MIN`,
+and the maximum representable identifier. The build and full CI still need
+to validate this change before any further refactoring.
