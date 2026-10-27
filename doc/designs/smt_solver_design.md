@@ -5029,3 +5029,16 @@ copyright format and Doxygen file description used by
 Retained Barr3 checkpoint SHA-256 identifiers and network-fixture provenance
 comments intact. This change affects documentation/comments only, not the
 solver algorithm or numerical data.
+
+### 2026-10-27 - Remove obsolete SMT BooleanLiteral forwarding header
+
+Removed `include/smt/boolean_literal.hpp`, which only forwarded to
+`cdcl/boolean_literal.hpp`. Following the standalone CDCL extraction,
+`BooleanLiteral` is owned by the CDCL library, and SMT includes its
+definition directly in `smt/smt_boolean.hpp`. There are no SMT source
+includes of the forwarding header, and no standalone API contract requires
+retaining this historical alias. New consumers should include
+`cdcl/boolean_literal.hpp` via the declared CDCL dependency.
+
+This is an API cleanup, not a change to Boolean indices, literal
+representation, theory handling, clause propagation, or solver behavior.
