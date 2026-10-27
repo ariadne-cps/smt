@@ -5003,3 +5003,10 @@ search; therefore the SMT partial callback returns provisional CONSISTENT
 for a completed assignment and delegates certification to the completion
 callback. This preserves the original numerical checking order and statistics.
 The CDCL submodule pin was updated to the corrected implementation.
+
+### 2026-10-27 - CDCL solver regression build dependency
+
+The CDCL submodule has been advanced to include the fix that adds
+`test_cdcl_solver` to the `tests` build target. Previously CTest registered
+this test while sanitizer builds did not produce its executable.
+This changes test build coverage only; no CDCL or SMT semantics changed.
