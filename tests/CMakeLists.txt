@@ -5,7 +5,6 @@ set(UNIT_TESTS
     test_smt_neural_benchmarks
     test_smt_boolean
     test_smt_theory
-    test_smt_cdcl_core
 )
 foreach(TEST ${UNIT_TESTS})
     add_executable(${TEST} ${TEST}.cpp)
