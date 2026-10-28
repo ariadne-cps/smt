@@ -3500,6 +3500,28 @@ class TestSmtSolver {
         }
 
         {
+            std::cout << "[smt-dpll] zero box budget propagates partial theory UNKNOWN" << std::endl;
+            SmtSolver bounded_solver(SmtSolverConfiguration(
+                0.125_x,
+                std::numeric_limits<SizeType>::max(),
+                std::numeric_limits<SizeType>::max(),
+                0u));
+            // The required atom is assigned by unit propagation; the other
+            // two atoms remain unassigned during the partial theory check.
+            ContinuousPredicate forced_atom=(ex>=0);
+            ContinuousPredicate free_branch=(ex>=-1)||(ex<=2);
+            SmtResult solve_result=bounded_solver.solve(
+                space,ExactBoxType({ExactIntervalType(0,1)}),
+                forced_atom&&free_branch);
+            ARIADNE_TEST_ASSERT(solve_result.is_unknown());
+            ARIADNE_TEST_ASSERT(
+                solve_result.unknown_reason()==SmtUnknownReason::RESOURCE_EXHAUSTED);
+            ARIADNE_TEST_ASSERT(solve_result.statistics().theory_checks>=2u);
+            ARIADNE_TEST_EQUAL(solve_result.statistics().boxes_processed,0u);
+            ARIADNE_TEST_ASSERT(solve_result.statistics().box_budget_exhaustions>=1u);
+        }
+
+        {
             std::cout << "[smt-dpll] one-box global budget permits one theory check" << std::endl;
             SmtSolver bounded_solver(SmtSolverConfiguration(
                 0.125_x,

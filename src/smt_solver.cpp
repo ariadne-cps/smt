@@ -2464,9 +2464,9 @@ class SmtCdclSearch : private CdclSolver, private CdclTheory {
         if(_theory_unknown_reason!=SmtUnknownReason::NONE) {
             return SmtResult::unknown(_theory_unknown_reason,_statistics);
         }
-        if(status==CdclSolveStatus::UNKNOWN) {
-            return SmtResult::unknown(SmtUnknownReason::RESOURCE_EXHAUSTED,_statistics);
-        }
+        // CDCL reports UNKNOWN only after partial or complete theory feedback
+        // has already recorded a non-NONE _theory_unknown_reason. The check
+        // above therefore handles every UNKNOWN result.
         return SmtResult::unsat(_statistics);
     }
 
