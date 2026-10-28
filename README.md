@@ -24,8 +24,9 @@ SMT depends directly on:
 - [ariadne-cps/symbolic](https://github.com/ariadne-cps/symbolic) (`ss/symbolic`; symbolic expressions).
 - [ariadne-cps/constraint-solving](https://github.com/ariadne-cps/constraint-solving) (`ss/constraint-solving`; validated pruning).
 - [ariadne-cps/equation-solving](https://github.com/ariadne-cps/equation-solving) (`ss/equation-solving`; interval Newton methods).
+- [ariadne-cps/threading](https://github.com/ariadne-cps/threading) (`ss/threading`; workload scheduling and thread-management facilities).
 
-The lower Function, Geometry, Algebra, Utility and Python Common dependencies are supplied transitively. CMake checks that common dependencies are pinned to consistent commits. SMT no longer uses the old monolithic Kernel.
+The lower Function, Geometry, Algebra, Utility and Python Common dependencies are supplied transitively. CMake checks that common dependencies, including Configuration, Logging and Utility, are pinned to consistent commits. SMT no longer uses the old monolithic Kernel.
 
 The Barr3 benchmark uses `SmtSolver` directly to verify the unsafe-region and Lie-derivative constraints derived from the published Barr3 2-64-64-1 neural barrier. The previous X-Taylor and other exploratory numerical profiles have been removed. No Linear Programming dependency is required.
 

@@ -13,3 +13,6 @@
 [submodule "ss/equation-solving"]
 	path = ss/equation-solving
 	url = https://github.com/ariadne-cps/equation-solving
+[submodule "ss/threading"]
+	path = ss/threading
+	url = https://github.com/ariadne-cps/threading

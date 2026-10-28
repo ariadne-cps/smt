@@ -17,3 +17,8 @@ if(NOT TARGET equation_solving)
     ensure_submodule_initialized(equation-solving)
     add_subdirectory(equation-solving)
 endif()
+
+if(NOT TARGET threading)
+    ensure_submodule_initialized(threading)
+    add_subdirectory(threading)
+endif()
