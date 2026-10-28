@@ -1,18 +1,18 @@
-[submodule "ss/configuration"]
-	path = ss/configuration
+[submodule "cfg"]
+	path = ss/cfg
 	url = https://github.com/ariadne-cps/configuration
-[submodule "ss/symbolic"]
-	path = ss/symbolic
+[submodule "sym"]
+	path = ss/sym
 	url = https://github.com/ariadne-cps/symbolic
-[submodule "ss/cdcl"]
-	path = ss/cdcl
+[submodule "cdc"]
+	path = ss/cdc
 	url = https://github.com/ariadne-cps/cdcl
-[submodule "ss/constraint-solving"]
-	path = ss/constraint-solving
+[submodule "csl"]
+	path = ss/csl
 	url = https://github.com/ariadne-cps/constraint-solving
-[submodule "ss/equation-solving"]
-	path = ss/equation-solving
+[submodule "equ"]
+	path = ss/equ
 	url = https://github.com/ariadne-cps/equation-solving
-[submodule "ss/threading"]
-	path = ss/threading
+[submodule "thr"]
+	path = ss/thr
 	url = https://github.com/ariadne-cps/threading
