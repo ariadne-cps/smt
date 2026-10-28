@@ -10,6 +10,8 @@ target_include_directories(pyariadne-smt-submodule-obj PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${PYTHON_COMMON_SOURCE_DIR}/include"
     $<TARGET_PROPERTY:pyariadne-symbolic,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:pyariadne-constraint_solving,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:pyariadne-equation_solving,INTERFACE_INCLUDE_DIRECTORIES>
 )
 target_link_libraries(pyariadne-smt-submodule-obj PRIVATE
     pyariadne-python-common
@@ -25,13 +27,16 @@ target_sources(pyariadne-smt INTERFACE
 target_include_directories(pyariadne-smt INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<TARGET_PROPERTY:pyariadne-symbolic,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:pyariadne-constraint_solving,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:pyariadne-equation_solving,INTERFACE_INCLUDE_DIRECTORIES>
 )
-# The generated pyariadne entry calls both symbolic_module() and
-# cdcl_module(). Link both interface targets so their module object files
-# are included in the combined extension on every platform.
+# Retain the object files of each direct SMT dependency in the combined
+# pyariadne extension on every platform.
 target_link_libraries(pyariadne-smt INTERFACE
     pyariadne-symbolic
     pyariadne-cdcl
+    pyariadne-constraint_solving
+    pyariadne-equation_solving
 )
 
 ariadne_add_python_module(

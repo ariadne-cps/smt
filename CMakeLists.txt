@@ -20,13 +20,29 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
     require_same_dependency_commit(Configuration
         CHAINS
             "configuration"
-            "symbolic|configuration"
             "cdcl|configuration"
+            "symbolic|configuration"
+            "constraint-solving|configuration"
+            "equation-solving|configuration"
+            "symbolic|function|configuration"
+            "constraint-solving|nonlinear-programming|configuration"
+            "equation-solving|function|configuration"
+    )
+    require_same_dependency_commit(Function
+        CHAINS
+            "symbolic|function"
+            "constraint-solving|nonlinear-programming|function"
+            "equation-solving|function"
     )
     require_same_dependency_commit(Utility
         CHAINS
-            "symbolic|kernel|bdd|threading|logging|utility"
+            "symbolic|function|geometry|algebra|interval|numeric|foundation|utility"
             "cdcl|utility"
+    )
+    require_same_dependency_commit(PythonCommon
+        CHAINS
+            "symbolic|function|geometry|algebra|interval|numeric|foundation|python-common"
+            "cdcl|python-common"
     )
 endif()
 
@@ -41,7 +57,7 @@ target_include_directories(smt INTERFACE
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include/ariadne-smt>
 )
-target_link_libraries(smt INTERFACE symbolic cdcl)
+target_link_libraries(smt INTERFACE symbolic cdcl constraint_solving equation_solving)
 
 add_subdirectory(src)
 target_link_libraries(SMT_SRC PRIVATE smt)

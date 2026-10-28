@@ -36,8 +36,8 @@
 #include "function/function.hpp"
 #include "function/procedure.hpp"
 #include "geometry/box.hpp"
-#include "solving/constraint_solver.hpp"
-#include "solving/interval_newton_method.hpp"
+#include "constraint-solving/constraint_solver.hpp"
+#include "equation-solving/interval_newton_method.hpp"
 #include "smt/smt_solver.hpp"
 
 using namespace Ariadne;

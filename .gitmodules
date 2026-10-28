@@ -7,3 +7,9 @@
 [submodule "ss/cdcl"]
 	path = ss/cdcl
 	url = https://github.com/ariadne-cps/cdcl
+[submodule "ss/constraint-solving"]
+	path = ss/constraint-solving
+	url = https://github.com/ariadne-cps/constraint-solving
+[submodule "ss/equation-solving"]
+	path = ss/equation-solving
+	url = https://github.com/ariadne-cps/equation-solving

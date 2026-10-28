@@ -38,7 +38,7 @@
 #include "numeric/numeric.hpp"
 #include "function/constraint.hpp"
 #include "function/procedure.hpp"
-#include "solving/constraint_solver.hpp"
+#include "constraint-solving/constraint_solver.hpp"
 #include "smt/smt_theory.hpp"
 #include "smt/smt_boolean.hpp"
 #include "symbolic/space.hpp"

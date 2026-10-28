@@ -44,9 +44,9 @@
 #include "threading/workload.hpp"
 
 #include "function/procedure.hpp"
-#include "solving/constraint_solver.hpp"
-#include "solving/interval_newton_method.hpp"
-#include "solving/nonlinear_interior_point_method.hpp"
+#include "constraint-solving/constraint_solver.hpp"
+#include "equation-solving/interval_newton_method.hpp"
+#include "nonlinear-programming/nonlinear_interior_point_method.hpp"
 #include "utility/exceptions.hpp"
 
 namespace Ariadne {

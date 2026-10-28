@@ -9,7 +9,7 @@
 
 Ariadne SMT is the standalone C++20 **epsilon-SMT solver for bounded real constraints** in Ariadne. It combines Boolean reasoning with validated real-constraint evaluation, interval-based pruning and subdivision to search for epsilon-satisfying witnesses or establish unsatisfiability when possible. Results distinguish **UNSAT**, **EPSILON_SAT** and **UNKNOWN**; an unknown result must not be interpreted as satisfiability or unsatisfiability.
 
-This repository is dedicated to the epsilon-SMT solver. General-purpose symbolic expressions belong to [Ariadne Symbolic](https://github.com/ariadne-cps/symbolic), and numerical and geometric algorithms belong to [Ariadne Kernel](https://github.com/ariadne-cps/kernel). The benchmarks here evaluate the epsilon-SMT solver and its internal theory-reasoning strategies rather than exposing separate general-purpose solver products.
+This repository is dedicated to the epsilon-SMT solver. General-purpose symbolic expressions belong to [Ariadne Symbolic](https://github.com/ariadne-cps/symbolic); validated constraint solving and equation solving belong to their respective modular Ariadne repositories. The benchmarks here evaluate the epsilon-SMT solver and its internal theory-reasoning strategies rather than exposing separate general-purpose solver products.
 
 ## Layout
 
@@ -19,12 +19,15 @@ The public API lives in `include/smt`, with umbrella header `include/ariadne-smt
 
 SMT depends directly on:
 
-- [ariadne-cps/symbolic](https://github.com/ariadne-cps/symbolic) (Git submodule).
-- [ariadne-cps/configuration](https://github.com/ariadne-cps/configuration) (shared build configuration).
-- [ariadne-cps/cdcl](https://github.com/ariadne-cps/cdcl) (shared Boolean search engine).
+- [ariadne-cps/configuration](https://github.com/ariadne-cps/configuration) (`ss/configuration`; shared CMake configuration).
+- [ariadne-cps/cdcl](https://github.com/ariadne-cps/cdcl) (`ss/cdcl`; Boolean search engine).
+- [ariadne-cps/symbolic](https://github.com/ariadne-cps/symbolic) (`ss/symbolic`; symbolic expressions).
+- [ariadne-cps/constraint-solving](https://github.com/ariadne-cps/constraint-solving) (`ss/constraint-solving`; validated pruning).
+- [ariadne-cps/equation-solving](https://github.com/ariadne-cps/equation-solving) (`ss/equation-solving`; interval Newton methods).
 
-Symbolic brings in Kernel and the lower Ariadne dependencies transitively.
-SMT checks that the transitive Utility commit matches the one pinned by CDCL.
+The lower Function, Geometry, Algebra, Utility and Python Common dependencies are supplied transitively. CMake checks that common dependencies are pinned to consistent commits. SMT no longer uses the old monolithic Kernel.
+
+The Barr3 benchmark uses `SmtSolver` directly to verify the unsafe-region and Lie-derivative constraints derived from the published Barr3 2-64-64-1 neural barrier. The previous X-Taylor and other exploratory numerical profiles have been removed. No Linear Programming dependency is required.
 
 ## Build
 
@@ -40,7 +43,7 @@ The standalone C++ tutorial is in `tutorials/tutorial_smt`, and the Python tutor
 
 ## Python bindings
 
-With a compatible Python development environment, the standalone build produces and installs the combined `pyariadne` extension, containing the Kernel, Symbolic and SMT bindings. The SMT classes are exposed as `SmtSolver`, `SmtSolverConfiguration` and `SmtResult`; `pyariadne-smt` is an internal CMake target, not a separate Python module.
+With a compatible Python development environment, the standalone build produces and installs the combined `pyariadne` extension, containing the Symbolic, CDCL, Constraint Solving, Equation Solving and SMT bindings and their transitive dependencies. The SMT classes are exposed as `SmtSolver`, `SmtSolverConfiguration` and `SmtResult`; `pyariadne-smt` is an internal CMake target, not a separate Python module.
 
 ## Contribution guidelines
 

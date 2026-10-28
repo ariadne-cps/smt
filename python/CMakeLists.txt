@@ -15,6 +15,12 @@ if(Python3_FOUND)
     if(NOT TARGET pyariadne-cdcl)
         message(FATAL_ERROR "The CDCL Python binding target is required to build pyariadne-smt.")
     endif()
+    if(NOT TARGET pyariadne-constraint_solving)
+        message(FATAL_ERROR "The Constraint Solving Python binding target is required to build pyariadne-smt.")
+    endif()
+    if(NOT TARGET pyariadne-equation_solving)
+        message(FATAL_ERROR "The Equation Solving Python binding target is required to build pyariadne-smt.")
+    endif()
 
     add_subdirectory(bindings)
 

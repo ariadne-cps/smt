@@ -27,7 +27,7 @@
  */
 
 #include "pybind11.hpp"
-#include "kernel-utilities.hpp"
+#include "function-utilities.hpp"
 
 #include "smt/smt_solver.hpp"
 
