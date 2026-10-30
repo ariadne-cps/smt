@@ -13,7 +13,3 @@ endif()
 if(NOT TARGET equation_solving)
     ariadne_add_submodule(equation-solving)
 endif()
-
-if(NOT TARGET threading)
-    ariadne_add_submodule(threading)
-endif()
