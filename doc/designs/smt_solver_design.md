@@ -5061,3 +5061,31 @@ Added a configure-time Utility gitlink equality check across
 `symbolic|kernel|bdd|threading|logging|utility` and `cdcl|utility`,
 complementing the existing Configuration consistency checks. Both resolve
 to `c3b31461cd3747f6c38640524d71899db0f69d4f`.
+
+### 2026-11-03 - Migrate SMT regression cases to Ariadne Testing
+
+The four SMT C++ test executables now register 43 independent
+`ContextFixture` methods directly via `ARIADNE_TESTING_ADD_TEST`, with no
+artificial fixture variants: 23 solver, 12 Boolean encoder, 7 theory and
+1 Barr3 neural benchmark test. The existing scenario order within each
+method and all 442 legacy assertions, 565 equality checks, 4 structural
+identity checks and 46 typed exception expectations are preserved.
+All 251 diagnostic `std::cout` statements now use
+`ARIADNE_TESTING_NOTE`, while stream-operator exception tests use local
+`std::ostringstream` sinks to exercise the same error paths without
+writing to stdout.
+
+The regression tests continue to cover solver configuration, validated
+theory classification, interval Newton and contractor policies, parallel
+solver states, witness checks, Boolean canonicalization and the published
+Barr3 full-network smoke test. Existing benchmark input files, solver
+algorithms, public headers and Python bindings are untouched.
+
+CTest invokes the test executables with `--concise`. The direct
+Ariadne Testing submodule and the configuration, symbolic, CDCL,
+constraint-solving and equation-solving dependencies are aligned to the
+same GCC-safe direct fixture registration implementation.
+
+Validation: registration counts, assertion counts, diagnostic routing and
+submodule constraints were checked statically before committing; actual
+compiler, test and sanitizer results remain pending until GitHub Actions.

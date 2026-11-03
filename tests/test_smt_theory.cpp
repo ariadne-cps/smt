@@ -32,29 +32,21 @@
 #include "smt/smt_theory.hpp"
 #include "symbolic/variable.hpp"
 
-#include "macro/testing.hpp"
+#include "ariadne-testing.hpp"
 
 using namespace Ariadne;
 
-class TestSmtTheory {
+class TestSmtTheory : public Ariadne::Testing::ContextFixture {
   public:
-    Void test() {
-        ARIADNE_TEST_CALL(test_relations());
-        ARIADNE_TEST_CALL(test_negations());
-        ARIADNE_TEST_CALL(test_normalization());
-        ARIADNE_TEST_CALL(test_weakening());
-        ARIADNE_TEST_CALL(test_streaming());
-        ARIADNE_TEST_CALL(test_invalid_relations());
-        ARIADNE_TEST_CALL(test_reject_non_atom());
-    }
+    using ContextFixture::ContextFixture;
 
-  private:
+  public:
     Void check_relation(ContinuousPredicate const& predicate,
                         SmtTheoryRelation expected,
                         String const& label) {
-        std::cout << "[smt-theory] relation " << label << std::endl;
+        ARIADNE_TESTING_NOTE("[smt-theory] relation " << label);
         SmtTheoryLiteral literal=make_smt_theory_literal(predicate);
-        ARIADNE_TEST_EQUAL(literal.relation(),expected);
+        ARIADNE_TESTING_EXPECT_EQUAL(literal.relation(),expected);
     }
 
     Void test_relations() {
@@ -74,9 +66,9 @@ class TestSmtTheory {
     Void check_negation(ContinuousPredicate const& predicate,
                         SmtTheoryRelation expected,
                         String const& label) {
-        std::cout << "[smt-theory] negation " << label << std::endl;
+        ARIADNE_TESTING_NOTE("[smt-theory] negation " << label);
         SmtTheoryLiteral literal=make_smt_theory_literal(predicate).negated();
-        ARIADNE_TEST_EQUAL(literal.relation(),expected);
+        ARIADNE_TESTING_EXPECT_EQUAL(literal.relation(),expected);
     }
 
     Void test_negations() {
@@ -102,12 +94,12 @@ class TestSmtTheory {
                                 SmtTheoryPrimitiveRelation expected_relation,
                                 RealExpression const& expected_expression,
                                 String const& label) {
-            std::cout << "[smt-theory] normalize " << label << std::endl;
+            ARIADNE_TESTING_NOTE("[smt-theory] normalize " << label);
             auto alternatives=normalize_smt_theory_literal(make_smt_theory_literal(predicate));
-            ARIADNE_TEST_EQUAL(alternatives.size(),1u);
-            ARIADNE_TEST_EQUAL(alternatives[0].size(),1u);
-            ARIADNE_TEST_EQUAL(alternatives[0][0].relation(),expected_relation);
-            ARIADNE_TEST_SAME(alternatives[0][0].expression(),expected_expression);
+            ARIADNE_TESTING_EXPECT_EQUAL(alternatives.size(),1u);
+            ARIADNE_TESTING_EXPECT_EQUAL(alternatives[0].size(),1u);
+            ARIADNE_TESTING_EXPECT_EQUAL(alternatives[0][0].relation(),expected_relation);
+            ARIADNE_TESTING_EXPECT_SAME(alternatives[0][0].expression(),expected_expression);
         };
 
         check_single(ex==ey,SmtTheoryPrimitiveRelation::EQ_ZERO,ex-ey,"x==y -> x-y=0");
@@ -121,15 +113,15 @@ class TestSmtTheory {
             ex-RealExpression(0),
             "sgn(x) -> x>0");
 
-        std::cout << "[smt-theory] normalize x!=y -> (x-y>0) or (y-x>0)" << std::endl;
+        ARIADNE_TESTING_NOTE("[smt-theory] normalize x!=y -> (x-y>0) or (y-x>0)");
         auto neq=normalize_smt_theory_literal(make_smt_theory_literal(ex!=ey));
-        ARIADNE_TEST_EQUAL(neq.size(),2u);
-        ARIADNE_TEST_EQUAL(neq[0].size(),1u);
-        ARIADNE_TEST_EQUAL(neq[1].size(),1u);
-        ARIADNE_TEST_EQUAL(neq[0][0].relation(),SmtTheoryPrimitiveRelation::GT_ZERO);
-        ARIADNE_TEST_EQUAL(neq[1][0].relation(),SmtTheoryPrimitiveRelation::GT_ZERO);
-        ARIADNE_TEST_SAME(neq[0][0].expression(),ex-ey);
-        ARIADNE_TEST_SAME(neq[1][0].expression(),ey-ex);
+        ARIADNE_TESTING_EXPECT_EQUAL(neq.size(),2u);
+        ARIADNE_TESTING_EXPECT_EQUAL(neq[0].size(),1u);
+        ARIADNE_TESTING_EXPECT_EQUAL(neq[1].size(),1u);
+        ARIADNE_TESTING_EXPECT_EQUAL(neq[0][0].relation(),SmtTheoryPrimitiveRelation::GT_ZERO);
+        ARIADNE_TESTING_EXPECT_EQUAL(neq[1][0].relation(),SmtTheoryPrimitiveRelation::GT_ZERO);
+        ARIADNE_TESTING_EXPECT_SAME(neq[0][0].expression(),ex-ey);
+        ARIADNE_TESTING_EXPECT_SAME(neq[1][0].expression(),ey-ex);
     }
 
     Void test_weakening() {
@@ -141,14 +133,14 @@ class TestSmtTheory {
         auto check = [&](ContinuousPredicate const& predicate,
                          SmtTheoryWeakRelation expected,
                          String const& label) {
-            std::cout << "[smt-theory] weaken " << label << " epsilon=" << epsilon << std::endl;
+            ARIADNE_TESTING_NOTE("[smt-theory] weaken " << label << " epsilon=" << epsilon);
             auto alternatives=normalize_smt_theory_literal(make_smt_theory_literal(predicate));
-            ARIADNE_TEST_EQUAL(alternatives.size(),1u);
-            ARIADNE_TEST_EQUAL(alternatives[0].size(),1u);
+            ARIADNE_TESTING_EXPECT_EQUAL(alternatives.size(),1u);
+            ARIADNE_TESTING_EXPECT_EQUAL(alternatives[0].size(),1u);
             auto weakened=weaken_smt_theory_literal(alternatives[0][0],epsilon);
-            ARIADNE_TEST_EQUAL(weakened.relation(),expected);
-            ARIADNE_TEST_EQUAL(weakened.epsilon(),epsilon);
-            ARIADNE_TEST_SAME(
+            ARIADNE_TESTING_EXPECT_EQUAL(weakened.relation(),expected);
+            ARIADNE_TESTING_EXPECT_EQUAL(weakened.epsilon(),epsilon);
+            ARIADNE_TESTING_EXPECT_SAME(
                 weakened.expression(),
                 alternatives[0][0].expression());
         };
@@ -158,13 +150,13 @@ class TestSmtTheory {
         check(ex>ey,SmtTheoryWeakRelation::GT_MINUS_EPSILON,"x>y -> x-y>-epsilon");
         check(sgn(ex),SmtTheoryWeakRelation::GT_MINUS_EPSILON,"sgn(x) -> x>-epsilon");
 
-        std::cout << "[smt-theory] weakening requires positive epsilon" << std::endl;
+        ARIADNE_TESTING_NOTE("[smt-theory] weakening requires positive epsilon");
         auto primitive=normalize_smt_theory_literal(make_smt_theory_literal(ex==ey))[0][0];
-        ARIADNE_TEST_THROWS(weaken_smt_theory_literal(primitive,0.0_x),std::runtime_error);
+        ARIADNE_TESTING_EXPECT_THROWS(std::runtime_error, weaken_smt_theory_literal(primitive,0.0_x));
     }
 
     Void test_streaming() {
-        std::cout << "[smt-theory] stream all theory relation kinds" << std::endl;
+        ARIADNE_TESTING_NOTE("[smt-theory] stream all theory relation kinds");
 
         std::ostringstream relation_stream;
         relation_stream
@@ -174,7 +166,7 @@ class TestSmtTheory {
             << SmtTheoryRelation::GEQ << " "
             << SmtTheoryRelation::LT << " "
             << SmtTheoryRelation::GT;
-        ARIADNE_TEST_EQUAL(
+        ARIADNE_TESTING_EXPECT_EQUAL(
             relation_stream.str(),
             String("= != <= >= < >"));
 
@@ -183,7 +175,7 @@ class TestSmtTheory {
             << SmtTheoryPrimitiveRelation::EQ_ZERO << " "
             << SmtTheoryPrimitiveRelation::GEQ_ZERO << " "
             << SmtTheoryPrimitiveRelation::GT_ZERO;
-        ARIADNE_TEST_EQUAL(
+        ARIADNE_TESTING_EXPECT_EQUAL(
             primitive_stream.str(),
             String("=0 >=0 >0"));
 
@@ -192,42 +184,33 @@ class TestSmtTheory {
             << SmtTheoryWeakRelation::ABS_LEQ_EPSILON << " "
             << SmtTheoryWeakRelation::GEQ_MINUS_EPSILON << " "
             << SmtTheoryWeakRelation::GT_MINUS_EPSILON;
-        ARIADNE_TEST_EQUAL(
+        ARIADNE_TESTING_EXPECT_EQUAL(
             weak_stream.str(),
             String("abs<=epsilon >=-epsilon >-epsilon"));
     }
 
     Void test_invalid_relations() {
-        std::cout << "[smt-theory] reject invalid enum values" << std::endl;
+        std::ostringstream invalid_stream;
+        ARIADNE_TESTING_NOTE("[smt-theory] reject invalid enum values");
         RealVariable x("x");
         RealExpression ex=x;
 
         auto invalid_relation=static_cast<SmtTheoryRelation>(999);
         SmtTheoryLiteral invalid_literal(ex,invalid_relation,RealExpression(0));
-        ARIADNE_TEST_THROWS(invalid_literal.negated(),std::runtime_error);
-        ARIADNE_TEST_THROWS(
-            normalize_smt_theory_literal(invalid_literal),
-            std::runtime_error);
-        ARIADNE_TEST_THROWS(
-            static_cast<Void>(
-                static_cast<OutputStream&>(std::cout) << invalid_relation),
-            std::runtime_error);
+        ARIADNE_TESTING_EXPECT_THROWS(std::runtime_error, invalid_literal.negated());
+        ARIADNE_TESTING_EXPECT_THROWS(std::runtime_error, normalize_smt_theory_literal(invalid_literal));
+        ARIADNE_TESTING_EXPECT_THROWS(std::runtime_error, static_cast<Void>(
+                static_cast<OutputStream&>(invalid_stream) << invalid_relation));
 
         auto invalid_primitive=static_cast<SmtTheoryPrimitiveRelation>(999);
         SmtTheoryPrimitiveLiteral invalid_primitive_literal(ex,invalid_primitive);
-        ARIADNE_TEST_THROWS(
-            weaken_smt_theory_literal(invalid_primitive_literal,0.125_x),
-            std::runtime_error);
-        ARIADNE_TEST_THROWS(
-            static_cast<Void>(
-                static_cast<OutputStream&>(std::cout) << invalid_primitive),
-            std::runtime_error);
+        ARIADNE_TESTING_EXPECT_THROWS(std::runtime_error, weaken_smt_theory_literal(invalid_primitive_literal,0.125_x));
+        ARIADNE_TESTING_EXPECT_THROWS(std::runtime_error, static_cast<Void>(
+                static_cast<OutputStream&>(invalid_stream) << invalid_primitive));
 
         auto invalid_weak=static_cast<SmtTheoryWeakRelation>(999);
-        ARIADNE_TEST_THROWS(
-            static_cast<Void>(
-                static_cast<OutputStream&>(std::cout) << invalid_weak),
-            std::runtime_error);
+        ARIADNE_TESTING_EXPECT_THROWS(std::runtime_error, static_cast<Void>(
+                static_cast<OutputStream&>(invalid_stream) << invalid_weak));
     }
 
     Void test_reject_non_atom() {
@@ -236,12 +219,19 @@ class TestSmtTheory {
         RealExpression ey=y;
         ContinuousPredicate formula=(ex<=0)&&(ey>=1);
 
-        std::cout << "[smt-theory] reject non-atomic conjunction" << std::endl;
-        ARIADNE_TEST_THROWS(make_smt_theory_literal(formula),std::runtime_error);
+        ARIADNE_TESTING_NOTE("[smt-theory] reject non-atomic conjunction");
+        ARIADNE_TESTING_EXPECT_THROWS(std::runtime_error, make_smt_theory_literal(formula));
     }
 };
 
-Int main() {
-    TestSmtTheory().test();
-    return ARIADNE_TEST_FAILURES;
+int main(int argc, char** argv) {
+    ARIADNE_TESTING_SUITE("test_smt_theory");
+    ARIADNE_TESTING_ADD_TEST(TestSmtTheory, test_relations);
+    ARIADNE_TESTING_ADD_TEST(TestSmtTheory, test_negations);
+    ARIADNE_TESTING_ADD_TEST(TestSmtTheory, test_normalization);
+    ARIADNE_TESTING_ADD_TEST(TestSmtTheory, test_weakening);
+    ARIADNE_TESTING_ADD_TEST(TestSmtTheory, test_streaming);
+    ARIADNE_TESTING_ADD_TEST(TestSmtTheory, test_invalid_relations);
+    ARIADNE_TESTING_ADD_TEST(TestSmtTheory, test_reject_non_atom);
+    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
 }

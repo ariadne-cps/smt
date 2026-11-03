@@ -13,3 +13,6 @@
 [submodule "equ"]
 	path = ss/equ
 	url = https://github.com/ariadne-cps/equation-solving
+[submodule "tst"]
+	path = ss/tst
+	url = https://github.com/ariadne-cps/testing

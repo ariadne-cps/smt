@@ -28,6 +28,11 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
             "symbolic|function|configuration"
             "constraint-solving|nonlinear-programming|configuration"
             "equation-solving|function|configuration"
+            "testing|configuration"
+            "cdcl|testing|configuration"
+            "symbolic|testing|configuration"
+            "constraint-solving|testing|configuration"
+            "equation-solving|testing|configuration"
     )
     require_same_dependency_commit(Function
         CHAINS
@@ -44,6 +49,16 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
         CHAINS
             "symbolic|function|geometry|algebra|interval|numeric|foundation|python-common"
             "cdcl|python-common"
+    )
+    require_same_dependency_commit(Testing
+        CHAINS
+            "testing"
+            "cdcl|testing"
+            "symbolic|testing"
+            "constraint-solving|testing"
+            "equation-solving|testing"
+            "symbolic|function|testing"
+            "constraint-solving|nonlinear-programming|testing"
     )
 endif()
 
