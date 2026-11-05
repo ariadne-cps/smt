@@ -29,6 +29,10 @@
 #ifndef ARIADNE_ARIADNE_SMT_HPP
 #define ARIADNE_ARIADNE_SMT_HPP
 
+#include "ariadne-cdcl.hpp"
+#include "ariadne-constraint-solving.hpp"
+#include "ariadne-equation-solving.hpp"
+
 #include "ariadne-symbolic.hpp"
 
 #include "smt/smt_theory.hpp"

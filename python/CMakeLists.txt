@@ -25,7 +25,7 @@ if(Python3_FOUND)
     add_subdirectory(bindings)
 
     if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
-        ariadne_finalize_python_module(NAME smt)
+        ariadne_finalize_python_module(NAME smt MODULE_IMPORT_NAME pyariadne_smt)
 
         # The interface binding targets contribute objects to the combined
         # pyariadne extension. Install the extension within the chosen prefix.

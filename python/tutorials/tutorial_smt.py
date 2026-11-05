@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-from pyariadne import *
+from pyariadne_smt import *
 
 def real(numerator, denominator=1):
     return Real(Rational(numerator, denominator))

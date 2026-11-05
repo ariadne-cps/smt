@@ -52,7 +52,3 @@ With a compatible Python development environment, the standalone build produces 
 If you would like to contribute to Ariadne SMT, please contact the developer:
 
 - Luca Geretti <luca.geretti@univr.it>
-
-## License
-
-Ariadne SMT is released under the GNU General Public License v3.0.

@@ -41,5 +41,6 @@ target_link_libraries(pyariadne-smt INTERFACE
 
 ariadne_add_python_module(
     NAME smt
+    MODULE_IMPORT_NAME pyariadne_smt
     MODULE_SOURCE smt_module.cpp
 )
