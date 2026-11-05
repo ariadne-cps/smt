@@ -5,34 +5,34 @@ project(Smt VERSION 1.0)
 option(WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
 
-if(NOT TARGET ariadne-configuration)
+if(NOT TARGET ariadne-build)
     find_package(Git REQUIRED)
     execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}"
-                    submodule update --init -- ss/cfg
+                    submodule update --init -- ss/bui
                     RESULT_VARIABLE _result)
     if(_result)
-        message(FATAL_ERROR "Cannot initialize configuration submodule")
+        message(FATAL_ERROR "Cannot initialize build submodule")
     endif()
-    include("${CMAKE_CURRENT_SOURCE_DIR}/ss/cfg/cmake/ProjectOptions.cmake")
+    include("${CMAKE_CURRENT_SOURCE_DIR}/ss/bui/cmake/ProjectOptions.cmake")
 endif()
 
 if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
-    require_same_dependency_commit(Configuration
+    require_same_dependency_commit(Build
         CHAINS
-            "configuration"
-            "cdcl|configuration"
-            "symbolic|configuration"
-            "constraint-solving|configuration"
-            "equation-solving|configuration"
-            "cdcl|threading|configuration"
-            "symbolic|function|configuration"
-            "constraint-solving|nonlinear-programming|configuration"
-            "equation-solving|function|configuration"
-            "testing|configuration"
-            "cdcl|testing|configuration"
-            "symbolic|testing|configuration"
-            "constraint-solving|testing|configuration"
-            "equation-solving|testing|configuration"
+            "build"
+            "cdcl|build"
+            "symbolic|build"
+            "constraint-solving|build"
+            "equation-solving|build"
+            "cdcl|threading|build"
+            "symbolic|function|build"
+            "constraint-solving|nonlinear-programming|build"
+            "equation-solving|function|build"
+            "testing|build"
+            "cdcl|testing|build"
+            "symbolic|testing|build"
+            "constraint-solving|testing|build"
+            "equation-solving|testing|build"
     )
     require_same_dependency_commit(Function
         CHAINS

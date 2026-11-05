@@ -8,6 +8,7 @@
 [![codecov](https://codecov.io/gh/ariadne-cps/smt/branch/main/graph/badge.svg)](https://codecov.io/gh/ariadne-cps/smt)
 
 Ariadne SMT is the standalone C++20 **epsilon-SMT solver for bounded real constraints** in Ariadne. It combines Boolean reasoning with validated real-constraint evaluation, interval-based pruning and subdivision to search for epsilon-satisfying witnesses or establish unsatisfiability when possible. Results distinguish **UNSAT**, **EPSILON_SAT** and **UNKNOWN**; an unknown result must not be interpreted as satisfiability or unsatisfiability.
+Although independently maintained and usable, this repository is also part of the [Ariadne repository structure](https://github.com/ariadne-cps/ariadne/blob/main/doc/structure.md).
 
 This repository is dedicated to the epsilon-SMT solver. General-purpose symbolic expressions belong to [Ariadne Symbolic](https://github.com/ariadne-cps/symbolic); validated constraint solving and equation solving belong to their respective modular Ariadne repositories. The benchmarks here evaluate the epsilon-SMT solver and its internal theory-reasoning strategies rather than exposing separate general-purpose solver products.
 
@@ -19,7 +20,7 @@ The public API lives in `include/smt`, with umbrella header `include/ariadne-smt
 
 SMT depends directly on:
 
-- [ariadne-cps/configuration](https://github.com/ariadne-cps/configuration) (`ss/cfg`; shared CMake configuration).
+- [ariadne-cps/build](https://github.com/ariadne-cps/build) (`ss/bui`; shared CMake configuration).
 - [ariadne-cps/cdcl](https://github.com/ariadne-cps/cdcl) (`ss/cdc`; Boolean search engine).
 - [ariadne-cps/symbolic](https://github.com/ariadne-cps/symbolic) (`ss/sym`; symbolic expressions).
 - [ariadne-cps/constraint-solving](https://github.com/ariadne-cps/constraint-solving) (`ss/csl`; validated pruning).
