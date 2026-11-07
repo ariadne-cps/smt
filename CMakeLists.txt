@@ -7,9 +7,12 @@ option(BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
 
 if(NOT TARGET ariadne-build)
     find_package(Git REQUIRED)
-    execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}"
-                    submodule update --init -- ss/bui
-                    RESULT_VARIABLE _result)
+    # Keep the initial Build checkout output in English.
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" -E env "LC_ALL=C"
+                "${GIT_EXECUTABLE}" -C "${CMAKE_CURRENT_SOURCE_DIR}"
+                submodule update --init -- ss/bui
+        RESULT_VARIABLE _result)
     if(_result)
         message(FATAL_ERROR "Cannot initialize build submodule")
     endif()
@@ -17,49 +20,24 @@ if(NOT TARGET ariadne-build)
 endif()
 
 if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
-    require_same_dependency_commit(Build
-        CHAINS
-            "build"
-            "cdcl|build"
-            "symbolic|build"
-            "constraint-solving|build"
-            "equation-solving|build"
-            "cdcl|threading|build"
-            "symbolic|function|build"
-            "constraint-solving|nonlinear-programming|build"
-            "equation-solving|function|build"
-            "testing|build"
-            "cdcl|testing|build"
-            "symbolic|testing|build"
-            "constraint-solving|testing|build"
-            "equation-solving|testing|build"
-    )
-    require_same_dependency_commit(Function
-        CHAINS
-            "symbolic|function"
-            "constraint-solving|nonlinear-programming|function"
-            "equation-solving|function"
-    )
-    require_same_dependency_commit(Logging
-        CHAINS
-            "symbolic|function|geometry|algebra|interval|numeric|logging"
-            "cdcl|threading|logging"
-    )
-    require_same_dependency_commit(PythonCommon
-        CHAINS
-            "symbolic|function|geometry|algebra|interval|numeric|foundation|python-common"
-            "cdcl|python-common"
-    )
-    require_same_dependency_commit(Testing
-        CHAINS
-            "testing"
-            "cdcl|testing"
-            "symbolic|testing"
-            "constraint-solving|testing"
-            "equation-solving|testing"
-            "symbolic|function|testing"
-            "constraint-solving|nonlinear-programming|testing"
-    )
+    # Pinned child commits guarantee their internal consistency.
+    # Preserve explicit comparisons across independent dependency branches.
+    require_same_dependency_commit(Build CHAINS
+        "build" "cdcl|build" "symbolic|build"
+        "constraint-solving|build" "equation-solving|build" "testing|build")
+    require_same_dependency_commit(Function CHAINS
+        "symbolic|function"
+        "constraint-solving|nonlinear-programming|function"
+        "equation-solving|function")
+    require_same_dependency_commit(Logging CHAINS
+        "symbolic|function|geometry|algebra|interval|numeric|logging"
+        "cdcl|threading|logging")
+    require_same_dependency_commit(PythonCommon CHAINS
+        "symbolic|function|geometry|algebra|interval|numeric|foundation|python-common"
+        "cdcl|python-common")
+    require_same_dependency_commit(Testing CHAINS
+        "testing" "cdcl|testing" "symbolic|testing"
+        "constraint-solving|testing" "equation-solving|testing")
 endif()
 
 setup_project()
