@@ -37,6 +37,8 @@
 #include <iostream>
 #include <optional>
 #include <vector>
+#include "threading/thread_manager.hpp"
+#include "threading/threading_command_line_interface.hpp"
 #include "ariadne-benchmarking.hpp"
 #include <limits>
 #include <stdexcept>
@@ -333,6 +335,8 @@ Int main(Int argc,const char* argv[]) {
         ++positional_end;
     unsigned measured=1u;
     Bench::CommandLine cli;
+    ThreadManager::instance();
+    cli.add(threading_command_line_contribution());
     cli.add(CommandLineContribution("smt-barr3-benchmark", {
         make_valued_argument_parser("", "samples",
             "Measured runs per Barr3 query (default: 1)",

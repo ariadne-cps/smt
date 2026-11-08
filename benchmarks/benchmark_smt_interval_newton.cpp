@@ -29,6 +29,8 @@
 #include <algorithm>
 #include <optional>
 #include <vector>
+#include "threading/thread_manager.hpp"
+#include "threading/threading_command_line_interface.hpp"
 #include "ariadne-benchmarking.hpp"
 #include <chrono>
 #include <iostream>
@@ -107,6 +109,8 @@ Int main(Int argc,const char* argv[])
     String const mode=mode_from_argument(positional_end,argv);
     unsigned measured_runs=101u;
     Bench::CommandLine cli;
+    ThreadManager::instance();
+    cli.add(threading_command_line_contribution());
     cli.add(CommandLineContribution("smt-interval-newton-benchmark", {
         make_valued_argument_parser("", "samples",
             "Measured repeats in smt-search-repeat-2d-coupled (default: 101)",
