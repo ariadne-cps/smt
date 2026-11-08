@@ -35,9 +35,6 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
     require_same_dependency_commit(PythonCommon CHAINS
         "symbolic|function|geometry|algebra|interval|numeric|foundation|python-common"
         "cdcl|python-common")
-    require_same_dependency_commit(Testing CHAINS
-        "testing" "cdcl|testing" "symbolic|testing"
-        "constraint-solving|testing" "equation-solving|testing")
 endif()
 
 setup_project()
