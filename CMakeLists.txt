@@ -24,7 +24,7 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
     # Preserve explicit comparisons across independent dependency branches.
     require_same_dependency_commit(Build CHAINS
         "build" "cdcl|build" "symbolic|build"
-        "constraint-solving|build" "equation-solving|build" "testing|build")
+        "constraint-solving|build" "equation-solving|build" "testing|build" "benchmarking|build")
     require_same_dependency_commit(Function CHAINS
         "symbolic|function"
         "constraint-solving|nonlinear-programming|function"
@@ -65,7 +65,7 @@ setup_project_library(
     LINK_LIBRARIES smt
 )
 
-setup_standalone_project_tests(
+setup_standalone_project(
     TARGET ariadne-smt
     TEST_DIRECTORY tests
     TEST_TARGET tests

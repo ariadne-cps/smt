@@ -27,6 +27,9 @@
  */
 
 #include <algorithm>
+#include <optional>
+#include <vector>
+#include "ariadne-benchmarking.hpp"
 #include <chrono>
 #include <iostream>
 #include <limits>
@@ -41,6 +44,7 @@
 #include "smt/smt_solver.hpp"
 
 using namespace Ariadne;
+namespace Bench=Ariadne::Benchmarking;
 
 namespace {
 
@@ -98,7 +102,32 @@ double width_sum(Vector<EquationSolverInterface::ValidatedNumericType> const& bo
 
 Int main(Int argc,const char* argv[])
 {
-    String const mode=mode_from_argument(argc,argv);
+    try {
+    Int const positional_end=(argc>1 && argv[1][0]!='-') ? 2 : 1;
+    String const mode=mode_from_argument(positional_end,argv);
+    unsigned measured_runs=101u;
+    Bench::CommandLine cli;
+    cli.add(CommandLineContribution("smt-interval-newton-benchmark", {
+        make_valued_argument_parser("", "samples",
+            "Measured repeats in smt-search-repeat-2d-coupled (default: 101)",
+            [&measured_runs](String const& value)->VoidFunction {
+                unsigned const parsed=Bench::parse_unsigned<unsigned>(value);
+                if(parsed==0u)
+                    throw std::invalid_argument("samples must be positive");
+                return [&measured_runs,parsed] { measured_runs=parsed; };
+            })
+    }));
+    std::vector<char const*> cli_args{argv[0]};
+    for(Int i=positional_end;i<argc;++i) cli_args.push_back(argv[i]);
+    if(not cli.acquire(static_cast<int>(cli_args.size()),cli_args.data()))
+        return 0;
+    bool warmups_overridden=false;
+    for(Int i=positional_end;i<argc;++i) {
+        std::string const arg(argv[i]);
+        if(arg=="--warmups" || arg.rfind("--warmups=",0u)==0u)
+            warmups_overridden=true;
+    }
+    unsigned const repeat_warmups=warmups_overridden ? cli.warmups() : 10u;
 
     if(mode=="smt-search-repeat-2d-coupled") {
         RealVariable x0("newton_2d_repeat_x0");
@@ -118,12 +147,30 @@ Int main(Int argc,const char* argv[])
             ExactIntervalType(0.15_x,0.34_x)
         });
 
-        constexpr SizeType warmup_runs=10u;
-        constexpr SizeType measured_runs=101u;
+        Bench::Runner runner(repeat_warmups,2u);
+        Bench::Report report("SMT interval Newton 2D coupled (nanoseconds)",
+                             cli.summary_fields());
+        report.set_dimension_columns({
+            {"Variant"},{"Dimension",0u,Bench::TableAlignment::Right},
+            {"Family"},{"Phase"}
+        });
+        report.set_table_options(Bench::TableOptions::ruled());
+        report.set_parameter_header(
+            "Solver constructed outside timing. One sample times solve(); "
+            "Newton internal phase is reported separately.");
 
-        auto run=[&](Bool interval_newton_enabled,String const& label) {
-            auto solve_once=[&]() {
-                SmtSolver solver(SmtSolverConfiguration(
+        auto run=[&](Bool interval_newton_enabled,char const* label) {
+            std::optional<SmtSolver> solver;
+            std::optional<SmtResult> result;
+            SmtSearchStatistics last_statistics;
+            Bench::Samples newton_samples;
+            unsigned repeat_round=0u;
+            Bench::Samples const samples=runner.run(
+                std::string("2d-coupled/")+label,measured_runs,
+                [&] {
+                    result.reset();
+                    solver.reset();
+                solver.emplace(SmtSolverConfiguration(
                     1e-5_x,
                     std::numeric_limits<SizeType>::max(),
                     std::numeric_limits<SizeType>::max(),
@@ -137,66 +184,46 @@ Int main(Int argc,const char* argv[])
                     false,
                     false,
                     interval_newton_enabled));
-                auto const start=std::chrono::steady_clock::now();
-                SmtResult result=solver.solve(space,domain,literals);
-                double const seconds=elapsed_seconds(start);
-                return std::make_pair(seconds,result.statistics());
-            };
-
-            for(SizeType i=0u;i!=warmup_runs;++i) {
-                solve_once();
-            }
-
-            std::vector<double> samples;
-            std::vector<double> newton_samples;
-            samples.reserve(measured_runs);
-            newton_samples.reserve(measured_runs);
-            SmtSearchStatistics last_statistics;
-            for(SizeType i=0u;i!=measured_runs;++i) {
-                auto sample=solve_once();
-                samples.push_back(sample.first);
-                newton_samples.push_back(
-                    sample.second.interval_newton_seconds);
-                last_statistics=sample.second;
-            }
-
-            std::sort(samples.begin(),samples.end());
-            std::sort(newton_samples.begin(),newton_samples.end());
-            double total=0.0;
-            for(double sample:samples) {
-                total+=sample;
-            }
-            double const median=samples[samples.size()/2u];
-            double const mean=total/static_cast<double>(samples.size());
-            double const median_newton=
-                newton_samples[newton_samples.size()/2u];
-
+                },
+                [&] { result.emplace(solver->solve(space,domain,literals)); },
+                [&] {
+                    if(not result)
+                        throw std::runtime_error("missing SMT repeat result");
+                    if(repeat_round++>=repeat_warmups)
+                        newton_samples.add(
+                            result->statistics().interval_newton_seconds*1e9);
+                    last_statistics=result->statistics();
+                });
+            Bench::Statistics const stats=Bench::summarize(samples);
+            Bench::Statistics const newton_stats=Bench::summarize(newton_samples);
+            report.add_row({label,"2","coupled","solve"},stats);
+            report.add_row({label,"2","coupled","interval-newton"},newton_stats);
             std::cout << "[smt-interval-newton-repeat]"
                       << " variant=" << label
                       << " dimension=2"
                       << " family=coupled"
                       << " propagation=enabled"
                       << " runs=" << measured_runs
-                      << " median-time=" << median
-                      << " mean-time=" << mean
-                      << " min-time=" << samples.front()
-                      << " max-time=" << samples.back()
+                      << " median-time=" << stats.median/1e9
+                      << " mean-time=" << stats.mean/1e9
+                      << " min-time=" << stats.minimum/1e9
+                      << " max-time=" << stats.maximum/1e9
                       << " boxes=" << last_statistics.boxes_processed
                       << " split=" << last_statistics.boxes_split
-                      << " hull-rounds="
-                      << last_statistics.hull_reduction_rounds
+                      << " hull-rounds=" << last_statistics.hull_reduction_rounds
                       << " hull-effective="
                       << last_statistics.hull_effective_reductions
                       << " newton-attempts="
                       << last_statistics.interval_newton_attempts
                       << " newton-effective="
                       << last_statistics.interval_newton_effective_reductions
-                      << " median-newton-time=" << median_newton
+                      << " median-newton-time=" << newton_stats.median/1e9
                       << std::endl;
         };
 
         run(false,"baseline");
         run(true,"newton");
+        report.print();
         return 0;
     }
 
@@ -1062,5 +1089,9 @@ Int main(Int argc,const char* argv[])
                   << " message=" << exception.what()
                   << std::endl;
         return mode=="singular" ? 0 : 1;
+    }
+    } catch(std::exception const& error) {
+        LOGGING_PRINTLN("benchmark_smt_interval_newton: "<<error.what())
+        return 1;
     }
 }

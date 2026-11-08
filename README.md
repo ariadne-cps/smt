@@ -21,6 +21,7 @@ The public API lives in `include/smt`, with umbrella header `include/ariadne-smt
 SMT depends directly on:
 
 - [ariadne-cps/build](https://github.com/ariadne-cps/build) (`ss/bui`; shared CMake configuration).
+- [ariadne-cps/benchmarking](https://github.com/ariadne-cps/benchmarking) (`ss/bmk`; standalone benchmark support only).
 - [ariadne-cps/cdcl](https://github.com/ariadne-cps/cdcl) (`ss/cdc`; Boolean search engine).
 - [ariadne-cps/symbolic](https://github.com/ariadne-cps/symbolic) (`ss/sym`; symbolic expressions).
 - [ariadne-cps/constraint-solving](https://github.com/ariadne-cps/constraint-solving) (`ss/csl`; validated pruning).
@@ -28,6 +29,14 @@ SMT depends directly on:
 - [ariadne-cps/threading](https://github.com/ariadne-cps/threading) (`ss/thr`; workload scheduling and thread-management facilities).
 
 The lower Function, Geometry, Algebra, Utility and Python Common dependencies are supplied transitively. CMake checks that common dependencies, including Configuration, Logging and Utility, are pinned to consistent commits. SMT no longer uses the old monolithic Kernel.
+
+The Release CI builds the `benchmarks` target only after the library and
+Python bindings. It does **not** execute benchmarks. The standalone benchmark
+executables use the shared Benchmarking CLI, timing and reporting facilities.
+The Interval Newton benchmark retains its diagnostic modes and uses the
+Runner for repeated solver timings. The Barr3 benchmark reports repeated
+solver-query measurements using Runner and Report. Invoke these executables
+manually when benchmarking is desired.
 
 The Barr3 benchmark uses `SmtSolver` directly to verify the unsafe-region and Lie-derivative constraints derived from the published Barr3 2-64-64-1 neural barrier. The previous X-Taylor and other exploratory numerical profiles have been removed. No Linear Programming dependency is required.
 
@@ -37,7 +46,8 @@ The Barr3 benchmark uses `SmtSolver` directly to verify the unsafe-region and Li
 git clone --recurse-submodules https://github.com/ariadne-cps/smt.git
 cd smt
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel --target everything
+cmake --build build --parallel --target ariadne-smt pyariadne
+cmake --build build --parallel --target benchmarks
 ctest --test-dir build --output-on-failure
 ```
 

@@ -35,6 +35,9 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <optional>
+#include <vector>
+#include "ariadne-benchmarking.hpp"
 #include <limits>
 #include <stdexcept>
 
@@ -43,6 +46,7 @@
 #include "smt_barr3_full64.hpp"
 
 using namespace Ariadne;
+namespace Bench=Ariadne::Benchmarking;
 
 namespace {
 SizeType box_limit_from_argument(Int argc,const char* argv[]) {
@@ -296,35 +300,77 @@ SmtResult timed_solve(
     SmtSolver const& solver,
     RealSpace const& space,
     ExactBoxType const& domain,
-    List<SmtTheoryPrimitiveLiteral> const& literals)
+    List<SmtTheoryPrimitiveLiteral> const& literals,
+    Bench::Runner const& runner,
+    Bench::Report& report,
+    unsigned measured)
 {
     std::cout << "[start] " << name
               << " literals=" << literals.size() << std::endl << std::flush;
-    Stopwatch<Milliseconds> stopwatch;
-    SmtResult result=solver.solve(space,domain,literals);
-    stopwatch.click();
-    print_result(name,result,stopwatch.elapsed_seconds());
-    return result;
+    std::optional<SmtResult> result;
+    Bench::Samples const samples=runner.run(
+        std::string(name),measured,
+        [&] { result.reset(); },
+        [&] { result.emplace(solver.solve(space,domain,literals)); },
+        [&] {
+            if(not result)
+                throw std::runtime_error("Missing Barr3 verification result");
+        });
+    Bench::Statistics const stats=Bench::summarize(samples);
+    print_result(name,*result,stats.median/1e9);
+    report.add_row({std::string(name),std::to_string(literals.size())},stats);
+    return std::move(*result);
 }
 
 
 } // namespace
 
 Int main(Int argc,const char* argv[]) {
-    SizeType const box_limit=box_limit_from_argument(argc,argv);
-    String const split_policy=split_policy_from_argument(argc,argv);
+    try {
+    // Preserve positional Barr3 configuration; shared benchmark flags follow.
+    Int positional_end=1;
+    while(positional_end<argc && argv[positional_end][0]!='-')
+        ++positional_end;
+    unsigned measured=1u;
+    Bench::CommandLine cli;
+    cli.add(CommandLineContribution("smt-barr3-benchmark", {
+        make_valued_argument_parser("", "samples",
+            "Measured runs per Barr3 query (default: 1)",
+            [&measured](String const& text)->VoidFunction {
+                unsigned const parsed=Bench::parse_unsigned<unsigned>(text);
+                if(parsed==0u)
+                    throw std::invalid_argument("samples must be positive");
+                return [&measured,parsed] { measured=parsed; };
+            })
+    }));
+    std::vector<char const*> cli_args{argv[0]};
+    for(Int i=positional_end;i<argc;++i) cli_args.push_back(argv[i]);
+    if(not cli.acquire(static_cast<int>(cli_args.size()),cli_args.data()))
+        return 0;
+    Bench::Runner runner(cli,4u);
+    Bench::Report report("Barr3 verification SMT query time (nanoseconds)",
+                         cli.summary_fields());
+    report.set_dimension_columns({
+        {"Query"},{"Literals",0u,Bench::TableAlignment::Right}
+    });
+    report.set_table_options(Bench::TableOptions::ruled());
+    report.set_parameter_header(
+        "One sample times solver.solve(); network construction and "
+        "verification diagnostics are outside timing.");
+    SizeType const box_limit=box_limit_from_argument(positional_end,argv);
+    String const split_policy=split_policy_from_argument(positional_end,argv);
     Bool const sensitivity_enabled=split_policy=="sensitivity";
     Bool const lookahead_enabled=split_policy=="lookahead";
-    Bool const witness_probing_enabled=witness_probing_from_argument(argc,argv);
-    Bool const shaving_enabled=shaving_from_argument(argc,argv);
-    Bool const hull_enabled=hull_from_argument(argc,argv);
-    String const query=query_from_argument(argc,argv);
-    Bool const monotone_enabled=monotone_from_argument(argc,argv);
-    String const lie_literal_order=lie_literal_order_from_argument(argc,argv);
-    String const child_order=child_order_from_argument(argc,argv);
+    Bool const witness_probing_enabled=witness_probing_from_argument(positional_end,argv);
+    Bool const shaving_enabled=shaving_from_argument(positional_end,argv);
+    Bool const hull_enabled=hull_from_argument(positional_end,argv);
+    String const query=query_from_argument(positional_end,argv);
+    Bool const monotone_enabled=monotone_from_argument(positional_end,argv);
+    String const lie_literal_order=lie_literal_order_from_argument(positional_end,argv);
+    String const child_order=child_order_from_argument(positional_end,argv);
     Bool const upper_child_first=child_order=="upper-first";
     String const preclassification_mode=
-        preclassification_mode_from_argument(argc,argv);
+        preclassification_mode_from_argument(positional_end,argv);
     Bool const preclassification_enabled=
         preclassification_mode!="no-preclassify";
     Bool const adaptive_preclassification_enabled=
@@ -432,22 +478,27 @@ Int main(Int argc,const char* argv[]) {
 
     if(query=="all") {
         timed_solve(
-            "unsafe-sphere",solver,space,unsafe_sphere_domain,sphere_literals);
+            "unsafe-sphere",solver,space,unsafe_sphere_domain,sphere_literals,runner,report,measured);
         timed_solve(
             "unsafe-rectangle-1",solver,space,
-            unsafe_rectangle_1_domain,barrier_literals);
+            unsafe_rectangle_1_domain,barrier_literals,runner,report,measured);
         timed_solve(
             "unsafe-rectangle-2",solver,space,
-            unsafe_rectangle_2_domain,barrier_literals);
+            unsafe_rectangle_2_domain,barrier_literals,runner,report,measured);
     }
     if(query=="lie-only") {
         List<SmtTheoryPrimitiveLiteral> lie_only_literals({lie_violation});
         timed_solve(
-            "lie-only",solver,space,domain,lie_only_literals);
+            "lie-only",solver,space,domain,lie_only_literals,runner,report,measured);
     } else {
         timed_solve(
-            "lie",solver,space,domain,lie_literals);
+            "lie",solver,space,domain,lie_literals,runner,report,measured);
     }
 
+    report.print();
     return 0;
+    } catch(std::exception const& error) {
+        LOGGING_PRINTLN("benchmark_smt_barr3_verification: "<<error.what())
+        return 1;
+    }
 }
