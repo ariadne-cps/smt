@@ -30,8 +30,9 @@ if(EXISTS "${PROJECT_SOURCE_DIR}/.git")
         "constraint-solving|nonlinear-programming|function"
         "equation-solving|function")
     require_same_dependency_commit(Logging CHAINS
-        "symbolic|function|geometry|algebra|interval|numeric|logging"
-        "cdcl|threading|logging")
+        "cdcl|threading|logging"
+        "constraint-solving|nonlinear-programming|logging"
+        "equation-solving|logging")
     require_same_dependency_commit(PythonCommon CHAINS
         "symbolic|function|geometry|algebra|interval|numeric|foundation|python-common"
         "cdcl|python-common")
