@@ -14,4 +14,3 @@ if(NOT TARGET equation_solving)
     ariadne_add_submodule(equation-solving)
 endif()
 
-ariadne_setup_testing()
