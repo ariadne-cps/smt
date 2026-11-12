@@ -1,17 +1,21 @@
 /***************************************************************************
- *            smt/smt_theory.cpp
+ *            smt_theory.cpp
  *
  *  Copyright  2026  Luca Geretti
  *
  ****************************************************************************/
 
 /*
- *  This file is part of Ariadne.
+ *  This file is part of Ariadne SMT.
  *
- *  Ariadne is free software: you can redistribute it and/or modify
+ *  Ariadne SMT is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, either version 3 of the License, or
  *  (at your option) any later version.
+ */
+
+/** @file src/smt_theory.cpp
+ *  @brief Implement theory literals, normalization and evaluation.
  */
 
 #include "smt/smt_theory.hpp"
