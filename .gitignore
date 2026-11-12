@@ -1,4 +1,4 @@
-include/config.hpp
+python/tests/__pycache__
 *.tmp.*
 build*
 .idea/

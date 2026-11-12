@@ -28,19 +28,17 @@
 
 #include "smt/smt_boolean.hpp"
 
-
 #include <map>
 #include <optional>
 
-#include "utility/exceptions.hpp"
 #include "smt/smt_theory.hpp"
+#include "utility/exceptions.hpp"
 
 namespace Ariadne {
 
 namespace {
 
-[[noreturn]] Void fail_indeterminate_smt_constant()
-{
+[[noreturn]] Void fail_indeterminate_smt_constant() {
     throw std::runtime_error("Indeterminate constant in SMT Boolean encoding");
 }
 
@@ -48,11 +46,12 @@ namespace {
 
 namespace SmtBooleanTestSupport {
 
-SmtTheoryRelation canonical_relation(SmtTheoryRelation relation)
-{
-    switch(relation) {
-        case SmtTheoryRelation::LEQ: return SmtTheoryRelation::GEQ;
-        case SmtTheoryRelation::LT: return SmtTheoryRelation::GT;
+SmtTheoryRelation canonical_relation(SmtTheoryRelation relation) {
+    switch (relation) {
+        case SmtTheoryRelation::LEQ:
+            return SmtTheoryRelation::GEQ;
+        case SmtTheoryRelation::LT:
+            return SmtTheoryRelation::GT;
         case SmtTheoryRelation::EQ:
         case SmtTheoryRelation::NEQ:
         case SmtTheoryRelation::GEQ:
@@ -63,9 +62,8 @@ SmtTheoryRelation canonical_relation(SmtTheoryRelation relation)
     }
 }
 
-Bool supported_operator(OperatorCode code)
-{
-    switch(code) {
+Bool supported_operator(OperatorCode code) {
+    switch (code) {
         case OperatorCode::CNST:
         case OperatorCode::SGN:
         case OperatorCode::EQ:
@@ -93,42 +91,38 @@ struct CanonicalTheoryAtom {
     RealExpression rhs;
 };
 
-CanonicalTheoryAtom canonical_theory_atom(ContinuousPredicate const& predicate)
-{
-    SmtTheoryLiteral literal=make_smt_theory_literal(predicate);
-    RealExpression lhs=literal.lhs();
-    RealExpression rhs=literal.rhs();
-    SmtTheoryRelation relation=literal.relation();
+CanonicalTheoryAtom canonical_theory_atom(const ContinuousPredicate& predicate) {
+    SmtTheoryLiteral literal = make_smt_theory_literal(predicate);
+    RealExpression lhs = literal.lhs();
+    RealExpression rhs = literal.rhs();
+    SmtTheoryRelation relation = literal.relation();
 
-    SmtTheoryRelation canonical=
+    SmtTheoryRelation canonical =
         SmtBooleanTestSupport::canonical_relation(relation);
-    if(relation==SmtTheoryRelation::LEQ || relation==SmtTheoryRelation::LT) {
-        return {rhs,canonical,lhs};
+    if (relation == SmtTheoryRelation::LEQ || relation == SmtTheoryRelation::LT) {
+        return {rhs, canonical, lhs};
     }
-    if(relation==SmtTheoryRelation::EQ || relation==SmtTheoryRelation::NEQ) {
-        if(before(rhs,lhs)) {
-            std::swap(lhs,rhs);
+    if (relation == SmtTheoryRelation::EQ || relation == SmtTheoryRelation::NEQ) {
+        if (before(rhs, lhs)) {
+            std::swap(lhs, rhs);
         }
     }
-    return {lhs,canonical,rhs};
+    return {lhs, canonical, rhs};
 }
 
-Bool equivalent_theory_atoms(ContinuousPredicate const& lhs,
-                             ContinuousPredicate const& rhs)
-{
-    CanonicalTheoryAtom left=canonical_theory_atom(lhs);
-    CanonicalTheoryAtom right=canonical_theory_atom(rhs);
-    return left.relation==right.relation
-        && identical(left.lhs,right.lhs)
-        && identical(left.rhs,right.rhs);
+Bool equivalent_theory_atoms(const ContinuousPredicate& lhs,
+                             const ContinuousPredicate& rhs) {
+    CanonicalTheoryAtom left = canonical_theory_atom(lhs);
+    CanonicalTheoryAtom right = canonical_theory_atom(rhs);
+    return left.relation == right.relation && identical(left.lhs, right.lhs) && identical(left.rhs, right.rhs);
 }
 
 } // namespace
 
 class TseitinBuilder {
   public:
-    SmtBooleanEncoding build(ContinuousPredicate const& predicate) {
-        BooleanLiteral root=this->_encode(predicate);
+    SmtBooleanEncoding build(const ContinuousPredicate& predicate) {
+        BooleanLiteral root = this->_encode(predicate);
         _encoding._add_clause({root});
         return _encoding;
     }
@@ -138,129 +132,121 @@ class TseitinBuilder {
         return _encoding._new_variable();
     }
 
-    std::optional<Bool> _constant_value(ContinuousPredicate const& predicate) const {
-        if(predicate.code()!=OperatorCode::CNST) {
+    std::optional<Bool> _constant_value(const ContinuousPredicate& predicate) const {
+        if (predicate.code() != OperatorCode::CNST) {
             return std::nullopt;
         }
-        Kleenean const& value=predicate.val();
+        const Kleenean& value = predicate.val();
         std::optional<Bool> result;
-        if(definitely(value)) {
-            result=true;
-        } else if(definitely(!value)) {
-            result=false;
+        if (definitely(value)) {
+            result = true;
+        } else if (definitely(!value)) {
+            result = false;
         } else {
             fail_indeterminate_smt_constant();
         }
         return result;
     }
 
-    BooleanLiteral _encode_constant(ContinuousPredicate const& predicate) {
-        BooleanLiteral variable=this->_new_variable();
-        Kleenean const& value=predicate.val();
-        if(not definitely(value) && not definitely(!value)) {
+    BooleanLiteral _encode_constant(const ContinuousPredicate& predicate) {
+        BooleanLiteral variable = this->_new_variable();
+        const Kleenean& value = predicate.val();
+        if (not definitely(value) && not definitely(!value)) {
             fail_indeterminate_smt_constant();
         }
         _encoding._add_clause({definitely(value) ? variable : -variable});
         return variable;
     }
 
-    BooleanLiteral _encode_atom(ContinuousPredicate const& predicate) {
-        const Void* key=static_cast<const Void*>(predicate.node_raw_ptr());
-        auto iter=_atom_variables.find(key);
-        if(iter!=_atom_variables.end()) {
+    BooleanLiteral _encode_atom(const ContinuousPredicate& predicate) {
+        const Void* key = static_cast<const Void*>(predicate.node_raw_ptr());
+        auto iter = _atom_variables.find(key);
+        if (iter != _atom_variables.end()) {
             return iter->second;
         }
 
-        for(SizeType i=0u; i!=_encoding.atom_count(); ++i) {
-            if(identical(_encoding.atom(i),predicate)
-                    || equivalent_theory_atoms(_encoding.atom(i),predicate)) {
+        for (SizeType i = 0u; i != _encoding.atom_count(); ++i) {
+            if (identical(_encoding.atom(i), predicate) || equivalent_theory_atoms(_encoding.atom(i), predicate)) {
                 BooleanLiteral variable(_encoding.atom_variable(i));
-                _atom_variables.emplace(key,variable);
+                _atom_variables.emplace(key, variable);
                 return variable;
             }
         }
 
-        BooleanLiteral variable=this->_new_variable();
-        _atom_variables.emplace(key,variable);
-        _encoding._add_atom(predicate,variable.variable());
+        BooleanLiteral variable = this->_new_variable();
+        _atom_variables.emplace(key, variable);
+        _encoding._add_atom(predicate, variable.variable());
         return variable;
     }
 
-    BooleanLiteral _encode(ContinuousPredicate const& predicate) {
-        OperatorCode code=predicate.code();
+    BooleanLiteral _encode(const ContinuousPredicate& predicate) {
+        OperatorCode code = predicate.code();
         SmtBooleanTestSupport::supported_operator(code);
 
-        if(code==OperatorCode::CNST) {
+        if (code == OperatorCode::CNST) {
             return this->_encode_constant(predicate);
         }
 
-        if(code==OperatorCode::SGN
-           || code==OperatorCode::EQ
-           || code==OperatorCode::NEQ
-           || code==OperatorCode::GEQ
-           || code==OperatorCode::LEQ
-           || code==OperatorCode::GT
-           || code==OperatorCode::LT) {
+        if (code == OperatorCode::SGN || code == OperatorCode::EQ || code == OperatorCode::NEQ || code == OperatorCode::GEQ || code == OperatorCode::LEQ || code == OperatorCode::GT || code == OperatorCode::LT) {
             return this->_encode_atom(predicate);
         }
 
-        if(code==OperatorCode::NOT) {
-            auto value=this->_constant_value(predicate.arg());
-            if(value.has_value()) {
+        if (code == OperatorCode::NOT) {
+            auto value = this->_constant_value(predicate.arg());
+            if (value.has_value()) {
                 return this->_encode_constant(ContinuousPredicate(!*value));
             }
             return -this->_encode(predicate.arg());
         }
 
-        if(code==OperatorCode::AND) {
-            auto lhs_value=this->_constant_value(predicate.arg1());
-            auto rhs_value=this->_constant_value(predicate.arg2());
-            if(lhs_value.has_value()) {
+        if (code == OperatorCode::AND) {
+            auto lhs_value = this->_constant_value(predicate.arg1());
+            auto rhs_value = this->_constant_value(predicate.arg2());
+            if (lhs_value.has_value()) {
                 return *lhs_value ? this->_encode(predicate.arg2())
                                   : this->_encode_constant(ContinuousPredicate(false));
             }
-            if(rhs_value.has_value()) {
+            if (rhs_value.has_value()) {
                 return *rhs_value ? this->_encode(predicate.arg1())
                                   : this->_encode_constant(ContinuousPredicate(false));
             }
 
-            BooleanLiteral lhs=this->_encode(predicate.arg1());
-            BooleanLiteral rhs=this->_encode(predicate.arg2());
-            BooleanLiteral variable=this->_new_variable();
+            BooleanLiteral lhs = this->_encode(predicate.arg1());
+            BooleanLiteral rhs = this->_encode(predicate.arg2());
+            BooleanLiteral variable = this->_new_variable();
 
-            _encoding._add_clause({-variable,lhs});
-            _encoding._add_clause({-variable,rhs});
-            _encoding._add_clause({variable,-lhs,-rhs});
+            _encoding._add_clause({-variable, lhs});
+            _encoding._add_clause({-variable, rhs});
+            _encoding._add_clause({variable, -lhs, -rhs});
             return variable;
         }
 
-        auto lhs_value=this->_constant_value(predicate.arg1());
-        auto rhs_value=this->_constant_value(predicate.arg2());
-        if(lhs_value.has_value()) {
+        auto lhs_value = this->_constant_value(predicate.arg1());
+        auto rhs_value = this->_constant_value(predicate.arg2());
+        if (lhs_value.has_value()) {
             return *lhs_value ? this->_encode_constant(ContinuousPredicate(true))
                               : this->_encode(predicate.arg2());
         }
-        if(rhs_value.has_value()) {
+        if (rhs_value.has_value()) {
             return *rhs_value ? this->_encode_constant(ContinuousPredicate(true))
                               : this->_encode(predicate.arg1());
         }
 
-        BooleanLiteral lhs=this->_encode(predicate.arg1());
-        BooleanLiteral rhs=this->_encode(predicate.arg2());
-        BooleanLiteral variable=this->_new_variable();
+        BooleanLiteral lhs = this->_encode(predicate.arg1());
+        BooleanLiteral rhs = this->_encode(predicate.arg2());
+        BooleanLiteral variable = this->_new_variable();
 
-        _encoding._add_clause({variable,-lhs});
-        _encoding._add_clause({variable,-rhs});
-        _encoding._add_clause({-variable,lhs,rhs});
+        _encoding._add_clause({variable, -lhs});
+        _encoding._add_clause({variable, -rhs});
+        _encoding._add_clause({-variable, lhs, rhs});
         return variable;
     }
 
     SmtBooleanEncoding _encoding;
-    std::map<const Void*,BooleanLiteral> _atom_variables;
+    std::map<const Void*, BooleanLiteral> _atom_variables;
 };
 
-SmtBooleanEncoding SmtBooleanEncoder::encode(ContinuousPredicate const& predicate) const
-{
+SmtBooleanEncoding SmtBooleanEncoder::encode(const ContinuousPredicate& predicate) const {
     return TseitinBuilder().build(predicate);
 }
 

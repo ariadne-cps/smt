@@ -27,41 +27,40 @@
  */
 
 #include "smt/smt_solver.hpp"
-#include "cdcl/cdcl_solver.hpp"
-#include "cdcl/cdcl_theory.hpp"
 
-#include <chrono>
-
-#include <vector>
-#include <utility>
+#include <algorithm>
 #include <atomic>
-#include <memory>
-#include <mutex>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
-#include <algorithm>
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <set>
 #include <thread>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
-#include "threading/workload.hpp"
-
+#include "cdcl/cdcl_solver.hpp"
+#include "cdcl/cdcl_theory.hpp"
 #include "function/procedure.hpp"
+#include "threading/workload.hpp"
+#include "utility/exceptions.hpp"
+
 #include "constraint-solving/constraint_solver.hpp"
 #include "equation-solving/interval_newton_method.hpp"
 #include "nonlinear-programming/nonlinear_interior_point_method.hpp"
-#include "utility/exceptions.hpp"
 
 namespace Ariadne {
 
 namespace {
 
 inline double elapsed_seconds(
-    std::chrono::steady_clock::time_point const& start)
-{
+    const std::chrono::steady_clock::time_point& start) {
     return std::chrono::duration<double>(
-        std::chrono::steady_clock::now()-start).count();
+               std::chrono::steady_clock::now() - start)
+        .count();
 }
 
 } // namespace
@@ -73,7 +72,7 @@ class SequentialSmtWorkQueue {
     Void push(UpperBoxType box) { _boxes.push_back(std::move(box)); }
 
     UpperBoxType pop() {
-        UpperBoxType box=std::move(_boxes.back());
+        UpperBoxType box = std::move(_boxes.back());
         _boxes.pop_back();
         return box;
     }
@@ -84,274 +83,265 @@ class SequentialSmtWorkQueue {
     std::vector<UpperBoxType> _boxes;
 };
 
-Bool same_box(UpperBoxType const& first, UpperBoxType const& second)
-{
-    for(SizeType i=0; i!=first.dimension(); ++i) {
-        Bool same_lower=
-            first[i].lower_bound().raw()==second[i].lower_bound().raw();
-        Bool same_upper=
-            first[i].upper_bound().raw()==second[i].upper_bound().raw();
-        if(not (same_lower & same_upper)) {
+Bool same_box(const UpperBoxType& first, const UpperBoxType& second) {
+    for (SizeType i = 0; i != first.dimension(); ++i) {
+        Bool same_lower =
+            first[i].lower_bound().raw() == second[i].lower_bound().raw();
+        Bool same_upper =
+            first[i].upper_bound().raw() == second[i].upper_bound().raw();
+        if (not(same_lower & same_upper)) {
             return false;
         }
     }
     return true;
 }
 
-Pair<SizeType,Pair<Bool,Bool>> sensitivity_split_coordinate(
-    UpperBoxType const& domain,
-    std::vector<ValidatedScalarMultivariateFunction> const& functions,
-    SizeType* derivatives_built=nullptr,
-    SizeType* derivative_evaluations=nullptr,
-    double* derivative_build_seconds=nullptr,
-    double* derivative_evaluation_seconds=nullptr)
-{
-    auto widths=domain.widths();
+Pair<SizeType, Pair<Bool, Bool>> sensitivity_split_coordinate(
+    const UpperBoxType& domain,
+    const std::vector<ValidatedScalarMultivariateFunction>& functions,
+    SizeType* derivatives_built = nullptr,
+    SizeType* derivative_evaluations = nullptr,
+    double* derivative_build_seconds = nullptr,
+    double* derivative_evaluation_seconds = nullptr) {
+    auto widths = domain.widths();
 
-    SizeType geometric=0u;
-    for(SizeType variable=1u; variable!=domain.dimension(); ++variable) {
-        if(widths[variable].raw()>widths[geometric].raw()) {
-            geometric=variable;
+    SizeType geometric = 0u;
+    for (SizeType variable = 1u; variable != domain.dimension(); ++variable) {
+        if (widths[variable].raw() > widths[geometric].raw()) {
+            geometric = variable;
         }
     }
 
-    Bool selected=false;
-    SizeType selected_coordinate=geometric;
-    PositiveFloatDPUpperBound selected_score(0u,dp);
-    for(SizeType variable=0u; variable!=domain.dimension(); ++variable) {
-        PositiveFloatDPUpperBound sensitivity(0u,dp);
-        Bool active=false;
-        UpperIntervalType const zero_derivative(ExactIntervalType(0,0));
-        for(auto const& function:functions) {
-            auto const build_start=std::chrono::steady_clock::now();
-            auto derivative=function.derivative(variable);
-            double const build_seconds=elapsed_seconds(build_start);
-            if(derivatives_built!=nullptr) { ++*derivatives_built; }
-            if(derivative_build_seconds!=nullptr) {
-                *derivative_build_seconds+=build_seconds;
+    Bool selected = false;
+    SizeType selected_coordinate = geometric;
+    PositiveFloatDPUpperBound selected_score(0u, dp);
+    for (SizeType variable = 0u; variable != domain.dimension(); ++variable) {
+        PositiveFloatDPUpperBound sensitivity(0u, dp);
+        Bool active = false;
+        const UpperIntervalType zero_derivative(ExactIntervalType(0, 0));
+        for (const auto& function: functions) {
+            const auto build_start = std::chrono::steady_clock::now();
+            auto derivative = function.derivative(variable);
+            const double build_seconds = elapsed_seconds(build_start);
+            if (derivatives_built != nullptr) {
+                ++*derivatives_built;
+            }
+            if (derivative_build_seconds != nullptr) {
+                *derivative_build_seconds += build_seconds;
             }
 
-            auto const evaluation_start=std::chrono::steady_clock::now();
-            UpperIntervalType derivative_image=apply(derivative,domain);
-            double const evaluation_seconds=elapsed_seconds(evaluation_start);
-            if(derivative_evaluations!=nullptr) { ++*derivative_evaluations; }
-            if(derivative_evaluation_seconds!=nullptr) {
-                *derivative_evaluation_seconds+=evaluation_seconds;
+            const auto evaluation_start = std::chrono::steady_clock::now();
+            UpperIntervalType derivative_image = apply(derivative, domain);
+            const double evaluation_seconds = elapsed_seconds(evaluation_start);
+            if (derivative_evaluations != nullptr) {
+                ++*derivative_evaluations;
             }
-            Bool const lower_is_zero=
-                derivative_image.lower_bound().raw()
-                    ==zero_derivative.lower_bound().raw();
-            Bool const upper_is_zero=
-                derivative_image.upper_bound().raw()
-                    ==zero_derivative.upper_bound().raw();
-            Bool const derivative_is_exactly_zero=
-                static_cast<unsigned>(lower_is_zero)
-                & static_cast<unsigned>(upper_is_zero);
-            if(not derivative_is_exactly_zero) {
-                active=true;
-                PositiveFloatDPUpperBound candidate=
-                    cast_positive(+(domain[variable].width()*mag(derivative_image)));
-                sensitivity+=candidate;
+            if (derivative_evaluation_seconds != nullptr) {
+                *derivative_evaluation_seconds += evaluation_seconds;
+            }
+            const Bool lower_is_zero =
+                derivative_image.lower_bound().raw() == zero_derivative.lower_bound().raw();
+            const Bool upper_is_zero =
+                derivative_image.upper_bound().raw() == zero_derivative.upper_bound().raw();
+            const Bool derivative_is_exactly_zero =
+                static_cast<unsigned>(lower_is_zero) & static_cast<unsigned>(upper_is_zero);
+            if (not derivative_is_exactly_zero) {
+                active = true;
+                PositiveFloatDPUpperBound candidate =
+                    cast_positive(+(domain[variable].width() * mag(derivative_image)));
+                sensitivity += candidate;
             }
         }
-        Bool const no_selection=not selected;
-        Bool const larger_score=sensitivity.raw()>selected_score.raw();
-        Bool const better_score=
-            static_cast<unsigned>(no_selection)
-            | static_cast<unsigned>(larger_score);
-        if(static_cast<unsigned>(active)
-           & static_cast<unsigned>(better_score)) {
-            selected=true;
-            selected_coordinate=variable;
-            selected_score=sensitivity;
+        const Bool no_selection = not selected;
+        const Bool larger_score = sensitivity.raw() > selected_score.raw();
+        const Bool better_score =
+            static_cast<unsigned>(no_selection) | static_cast<unsigned>(larger_score);
+        if (static_cast<unsigned>(active) & static_cast<unsigned>(better_score)) {
+            selected = true;
+            selected_coordinate = variable;
+            selected_score = sensitivity;
         }
     }
 
-    Bool guided=selected;
-    SizeType coordinate=selected_coordinate;
-    Bool overrode=guided & (coordinate!=geometric);
-    return {coordinate,{guided,overrode}};
+    Bool guided = selected;
+    SizeType coordinate = selected_coordinate;
+    Bool overrode = guided & (coordinate != geometric);
+    return {
+        coordinate, {guided, overrode}
+    };
 }
 
-Pair<SizeType,Pair<Bool,Bool>> cached_sensitivity_split_coordinate(
-    UpperBoxType const& domain,
-    std::vector<ConstraintPropagationConstraint const*> const& literals,
+Pair<SizeType, Pair<Bool, Bool>> cached_sensitivity_split_coordinate(
+    const UpperBoxType& domain,
+    const std::vector<const ConstraintPropagationConstraint*>& literals,
     SizeType& derivative_evaluations,
-    double& derivative_evaluation_seconds)
-{
-    auto widths=domain.widths();
+    double& derivative_evaluation_seconds) {
+    auto widths = domain.widths();
 
-    SizeType geometric=0u;
-    for(SizeType variable=1u; variable!=domain.dimension(); ++variable) {
-        if(widths[variable].raw()>widths[geometric].raw()) {
-            geometric=variable;
+    SizeType geometric = 0u;
+    for (SizeType variable = 1u; variable != domain.dimension(); ++variable) {
+        if (widths[variable].raw() > widths[geometric].raw()) {
+            geometric = variable;
         }
     }
 
-    Bool selected=false;
-    SizeType selected_coordinate=geometric;
-    PositiveFloatDPUpperBound selected_score(0u,dp);
-    UpperIntervalType const zero_derivative(ExactIntervalType(0,0));
+    Bool selected = false;
+    SizeType selected_coordinate = geometric;
+    PositiveFloatDPUpperBound selected_score(0u, dp);
+    const UpperIntervalType zero_derivative(ExactIntervalType(0, 0));
 
-    for(SizeType variable=0u; variable!=domain.dimension(); ++variable) {
-        PositiveFloatDPUpperBound sensitivity(0u,dp);
-        Bool active=false;
-        for(auto const* literal:literals) {
-            auto const& derivative=literal->derivatives[variable];
-            if(not derivative.has_value()) {
+    for (SizeType variable = 0u; variable != domain.dimension(); ++variable) {
+        PositiveFloatDPUpperBound sensitivity(0u, dp);
+        Bool active = false;
+        for (const auto* literal: literals) {
+            const auto& derivative = literal->derivatives[variable];
+            if (not derivative.has_value()) {
                 continue;
             }
 
-            auto const evaluation_start=std::chrono::steady_clock::now();
-            UpperIntervalType derivative_image=apply(*derivative,domain);
-            double const evaluation_seconds=
+            const auto evaluation_start = std::chrono::steady_clock::now();
+            UpperIntervalType derivative_image = apply(*derivative, domain);
+            const double evaluation_seconds =
                 elapsed_seconds(evaluation_start);
             ++derivative_evaluations;
-            derivative_evaluation_seconds+=evaluation_seconds;
+            derivative_evaluation_seconds += evaluation_seconds;
 
-            Bool const lower_is_zero=
-                derivative_image.lower_bound().raw()
-                    ==zero_derivative.lower_bound().raw();
-            Bool const upper_is_zero=
-                derivative_image.upper_bound().raw()
-                    ==zero_derivative.upper_bound().raw();
-            Bool const derivative_is_exactly_zero=
-                static_cast<unsigned>(lower_is_zero)
-                & static_cast<unsigned>(upper_is_zero);
-            if(not derivative_is_exactly_zero) {
-                active=true;
-                sensitivity+=
-                    domain[variable].width()*mag(derivative_image);
+            const Bool lower_is_zero =
+                derivative_image.lower_bound().raw() == zero_derivative.lower_bound().raw();
+            const Bool upper_is_zero =
+                derivative_image.upper_bound().raw() == zero_derivative.upper_bound().raw();
+            const Bool derivative_is_exactly_zero =
+                static_cast<unsigned>(lower_is_zero) & static_cast<unsigned>(upper_is_zero);
+            if (not derivative_is_exactly_zero) {
+                active = true;
+                sensitivity +=
+                    domain[variable].width() * mag(derivative_image);
             }
         }
 
-        Bool const no_selection=not selected;
-        Bool const larger_score=sensitivity.raw()>selected_score.raw();
-        Bool const better_score=
-            static_cast<unsigned>(no_selection)
-            | static_cast<unsigned>(larger_score);
-        if(static_cast<unsigned>(active)
-           & static_cast<unsigned>(better_score)) {
-            selected=true;
-            selected_coordinate=variable;
-            selected_score=sensitivity;
+        const Bool no_selection = not selected;
+        const Bool larger_score = sensitivity.raw() > selected_score.raw();
+        const Bool better_score =
+            static_cast<unsigned>(no_selection) | static_cast<unsigned>(larger_score);
+        if (static_cast<unsigned>(active) & static_cast<unsigned>(better_score)) {
+            selected = true;
+            selected_coordinate = variable;
+            selected_score = sensitivity;
         }
     }
 
-    Bool guided=selected;
-    SizeType coordinate=selected_coordinate;
-    Bool overrode=guided & (coordinate!=geometric);
-    return {coordinate,{guided,overrode}};
+    Bool guided = selected;
+    SizeType coordinate = selected_coordinate;
+    Bool overrode = guided & (coordinate != geometric);
+    return {
+        coordinate, {guided, overrode}
+    };
 }
 
-Pair<SizeType,Bool> interval_lookahead_split_coordinate(
-    UpperBoxType const& domain,
-    std::vector<ValidatedScalarMultivariateFunction> const& functions,
+Pair<SizeType, Bool> interval_lookahead_split_coordinate(
+    const UpperBoxType& domain,
+    const std::vector<ValidatedScalarMultivariateFunction>& functions,
     SizeType& function_evaluations,
-    double& evaluation_seconds)
-{
-    auto widths=domain.widths();
-    SizeType geometric=0u;
-    for(SizeType variable=1u; variable!=domain.dimension(); ++variable) {
-        if(widths[variable].raw()>widths[geometric].raw()) {
-            geometric=variable;
+    double& evaluation_seconds) {
+    auto widths = domain.widths();
+    SizeType geometric = 0u;
+    for (SizeType variable = 1u; variable != domain.dimension(); ++variable) {
+        if (widths[variable].raw() > widths[geometric].raw()) {
+            geometric = variable;
         }
     }
 
-    Bool selected=false;
-    SizeType selected_coordinate=geometric;
-    PositiveFloatDPUpperBound selected_score(0u,dp);
-    for(SizeType variable=0u; variable!=domain.dimension(); ++variable) {
-        auto children=domain.split(variable);
-        if(same_box(children.first,children.second)) {
+    Bool selected = false;
+    SizeType selected_coordinate = geometric;
+    PositiveFloatDPUpperBound selected_score(0u, dp);
+    for (SizeType variable = 0u; variable != domain.dimension(); ++variable) {
+        auto children = domain.split(variable);
+        if (same_box(children.first, children.second)) {
             continue;
         }
 
-        PositiveFloatDPUpperBound score(0u,dp);
-        for(auto const& function:functions) {
-            auto const start=std::chrono::steady_clock::now();
-            UpperIntervalType first_image=apply(function,children.first);
-            UpperIntervalType second_image=apply(function,children.second);
-            double const seconds=elapsed_seconds(start);
-            function_evaluations+=2u;
-            evaluation_seconds+=seconds;
-            score+=first_image.width();
-            score+=second_image.width();
+        PositiveFloatDPUpperBound score(0u, dp);
+        for (const auto& function: functions) {
+            const auto start = std::chrono::steady_clock::now();
+            UpperIntervalType first_image = apply(function, children.first);
+            UpperIntervalType second_image = apply(function, children.second);
+            const double seconds = elapsed_seconds(start);
+            function_evaluations += 2u;
+            evaluation_seconds += seconds;
+            score += first_image.width();
+            score += second_image.width();
         }
 
-        if(not selected || score.raw()<selected_score.raw()) {
-            selected=true;
-            selected_coordinate=variable;
-            selected_score=score;
+        if (not selected || score.raw() < selected_score.raw()) {
+            selected = true;
+            selected_coordinate = variable;
+            selected_score = score;
         }
     }
 
-    return {selected_coordinate,selected_coordinate!=geometric};
+    return {selected_coordinate, selected_coordinate != geometric};
 }
 
 UpperBoxType singleton_box(
-    ConstraintSolverInterface::ExactPointType const& point)
-{
+    const ConstraintSolverInterface::ExactPointType& point) {
     UpperBoxType result(point.dimension());
-    for(SizeType i=0u; i!=point.dimension(); ++i) {
-        result[i]=UpperIntervalType(ExactIntervalType(point[i],point[i]));
+    for (SizeType i = 0u; i != point.dimension(); ++i) {
+        result[i] = UpperIntervalType(ExactIntervalType(point[i], point[i]));
     }
     return result;
 }
 
-UpperBoxType midpoint_box(UpperBoxType const& domain)
-{
+UpperBoxType midpoint_box(const UpperBoxType& domain) {
     UpperBoxType result(domain.dimension());
-    for(SizeType i=0u; i!=domain.dimension(); ++i) {
-        auto m=domain[i].midpoint();
-        result[i]=UpperIntervalType(m,m);
+    for (SizeType i = 0u; i != domain.dimension(); ++i) {
+        auto m = domain[i].midpoint();
+        result[i] = UpperIntervalType(m, m);
     }
     return result;
 }
 
-std::vector<UpperBoxType> epsilon_witness_candidates(UpperBoxType const& domain)
-{
-    constexpr SizeType max_corner_candidates=64u;
+std::vector<UpperBoxType> epsilon_witness_candidates(const UpperBoxType& domain) {
+    constexpr SizeType max_corner_candidates = 64u;
 
     std::vector<UpperBoxType> candidates;
-    candidates.reserve(3u+2u*domain.dimension()+max_corner_candidates);
+    candidates.reserve(3u + 2u * domain.dimension() + max_corner_candidates);
 
-    UpperBoxType midpoint=midpoint_box(domain);
+    UpperBoxType midpoint = midpoint_box(domain);
     candidates.push_back(midpoint);
 
-    UpperBoxType lower=midpoint;
-    UpperBoxType upper=midpoint;
-    for(SizeType i=0u; i!=domain.dimension(); ++i) {
-        auto l=domain[i].lower_bound().raw();
-        auto u=domain[i].upper_bound().raw();
-        lower[i]=UpperIntervalType(l,l);
-        upper[i]=UpperIntervalType(u,u);
+    UpperBoxType lower = midpoint;
+    UpperBoxType upper = midpoint;
+    for (SizeType i = 0u; i != domain.dimension(); ++i) {
+        auto l = domain[i].lower_bound().raw();
+        auto u = domain[i].upper_bound().raw();
+        lower[i] = UpperIntervalType(l, l);
+        upper[i] = UpperIntervalType(u, u);
     }
     candidates.push_back(lower);
     candidates.push_back(upper);
 
-    for(SizeType i=0u; i!=domain.dimension(); ++i) {
-        UpperBoxType low_axis=midpoint;
-        UpperBoxType high_axis=midpoint;
-        auto l=domain[i].lower_bound().raw();
-        auto u=domain[i].upper_bound().raw();
-        low_axis[i]=UpperIntervalType(l,l);
-        high_axis[i]=UpperIntervalType(u,u);
+    for (SizeType i = 0u; i != domain.dimension(); ++i) {
+        UpperBoxType low_axis = midpoint;
+        UpperBoxType high_axis = midpoint;
+        auto l = domain[i].lower_bound().raw();
+        auto u = domain[i].upper_bound().raw();
+        low_axis[i] = UpperIntervalType(l, l);
+        high_axis[i] = UpperIntervalType(u, u);
         candidates.push_back(std::move(low_axis));
         candidates.push_back(std::move(high_axis));
     }
 
-    if(domain.dimension()<std::numeric_limits<std::uint64_t>::digits) {
-        std::uint64_t corner_count=std::uint64_t(1) << domain.dimension();
-        if(corner_count<=max_corner_candidates) {
-            for(std::uint64_t mask=0u; mask<corner_count; ++mask) {
-                UpperBoxType corner=midpoint;
-                for(SizeType i=0u; i!=domain.dimension(); ++i) {
-                    Bool use_upper=(mask & (std::uint64_t(1) << i))!=0u;
-                    auto endpoint=use_upper
-                        ? domain[i].upper_bound().raw()
-                        : domain[i].lower_bound().raw();
-                    corner[i]=UpperIntervalType(endpoint,endpoint);
+    if (domain.dimension() < std::numeric_limits<std::uint64_t>::digits) {
+        std::uint64_t corner_count = std::uint64_t(1) << domain.dimension();
+        if (corner_count <= max_corner_candidates) {
+            for (std::uint64_t mask = 0u; mask < corner_count; ++mask) {
+                UpperBoxType corner = midpoint;
+                for (SizeType i = 0u; i != domain.dimension(); ++i) {
+                    Bool use_upper = (mask & (std::uint64_t(1) << i)) != 0u;
+                    auto endpoint = use_upper
+                                      ? domain[i].upper_bound().raw()
+                                      : domain[i].lower_bound().raw();
+                    corner[i] = UpperIntervalType(endpoint, endpoint);
                 }
                 candidates.push_back(std::move(corner));
             }
@@ -362,14 +352,12 @@ std::vector<UpperBoxType> epsilon_witness_candidates(UpperBoxType const& domain)
 }
 
 std::vector<SizeType> interval_newton_equality_indices(
-    std::vector<ConstraintPropagationConstraint> const& literals)
-{
+    const std::vector<ConstraintPropagationConstraint>& literals) {
     std::vector<SizeType> result;
-    ExactIntervalType const zero_bounds(0,0);
-    for(SizeType i=0u;i!=literals.size();++i) {
-        auto const& literal=literals[i];
-        if(not literal.strict_lower
-           && definitely(literal.bounds==zero_bounds)) {
+    const ExactIntervalType zero_bounds(0, 0);
+    for (SizeType i = 0u; i != literals.size(); ++i) {
+        const auto& literal = literals[i];
+        if (not literal.strict_lower && definitely(literal.bounds == zero_bounds)) {
             result.push_back(i);
         }
     }
@@ -377,54 +365,53 @@ std::vector<SizeType> interval_newton_equality_indices(
 }
 
 std::vector<std::vector<SizeType>> interval_newton_subsystem_candidates(
-    std::vector<ConstraintPropagationConstraint> const& literals,
-    SizeType dimension)
-{
-    constexpr SizeType max_candidates=8u;
+    const std::vector<ConstraintPropagationConstraint>& literals,
+    SizeType dimension) {
+    constexpr SizeType max_candidates = 8u;
 
     std::vector<std::vector<SizeType>> result;
-    if(dimension==0u) {
+    if (dimension == 0u) {
         return result;
     }
 
-    std::vector<SizeType> const equalities=
+    const std::vector<SizeType> equalities =
         interval_newton_equality_indices(literals);
-    if(equalities.size()<dimension) {
+    if (equalities.size() < dimension) {
         return result;
     }
 
     std::vector<SizeType> positions(dimension);
-    for(SizeType i=0u;i!=dimension;++i) {
-        positions[i]=i;
+    for (SizeType i = 0u; i != dimension; ++i) {
+        positions[i] = i;
     }
 
-    for(;;) {
+    for (;;) {
         std::vector<SizeType> candidate;
         candidate.reserve(dimension);
-        for(SizeType position:positions) {
+        for (SizeType position: positions) {
             candidate.push_back(equalities[position]);
         }
         result.push_back(std::move(candidate));
-        if(result.size()>=max_candidates) {
+        if (result.size() >= max_candidates) {
             break;
         }
 
-        Bool advanced=false;
-        SizeType pivot=dimension;
-        while(pivot>0u) {
+        Bool advanced = false;
+        SizeType pivot = dimension;
+        while (pivot > 0u) {
             --pivot;
-            SizeType const maximum=
-                equalities.size()-dimension+pivot;
-            if(positions[pivot]<maximum) {
+            const SizeType maximum =
+                equalities.size() - dimension + pivot;
+            if (positions[pivot] < maximum) {
                 ++positions[pivot];
-                for(SizeType i=pivot+1u;i!=dimension;++i) {
-                    positions[i]=positions[i-1u]+1u;
+                for (SizeType i = pivot + 1u; i != dimension; ++i) {
+                    positions[i] = positions[i - 1u] + 1u;
                 }
-                advanced=true;
+                advanced = true;
                 break;
             }
         }
-        if(not advanced) {
+        if (not advanced) {
             break;
         }
     }
@@ -434,35 +421,29 @@ std::vector<std::vector<SizeType>> interval_newton_subsystem_candidates(
 
 Bool interval_newton_eligible(
     Bool enabled,
-    std::vector<ConstraintPropagationConstraint> const& literals,
-    SizeType dimension)
-{
-    if(not enabled) {
+    const std::vector<ConstraintPropagationConstraint>& literals,
+    SizeType dimension) {
+    if (not enabled) {
         return false;
     }
-    return not interval_newton_subsystem_candidates(literals,dimension).empty();
+    return not interval_newton_subsystem_candidates(literals, dimension).empty();
 }
 
 Bool contractor_enabled(
     Bool hull,
     Bool shaving,
     Bool monotone,
-    Bool interval_newton)
-{
-    return static_cast<unsigned>(hull)
-        | static_cast<unsigned>(shaving)
-        | static_cast<unsigned>(monotone)
-        | static_cast<unsigned>(interval_newton);
+    Bool interval_newton) {
+    return static_cast<unsigned>(hull) | static_cast<unsigned>(shaving) | static_cast<unsigned>(monotone) | static_cast<unsigned>(interval_newton);
 }
 
 SmtPreclassificationOutcome preclassification_outcome(
     Bool pruned,
-    Bool epsilon_satisfied)
-{
-    if(pruned) {
+    Bool epsilon_satisfied) {
+    if (pruned) {
         return SmtPreclassificationOutcome::PRUNED;
     }
-    if(epsilon_satisfied) {
+    if (epsilon_satisfied) {
         return SmtPreclassificationOutcome::EPSILON_SAT;
     }
     return SmtPreclassificationOutcome::UNRESOLVED;
@@ -471,61 +452,58 @@ SmtPreclassificationOutcome preclassification_outcome(
 class AdaptivePreclassificationScheduler {
   public:
     AdaptivePreclassificationScheduler(
-        SizeType initial_window=16u,
-        SizeType active_window=8u,
-        SizeType refresh_period=8u)
+        SizeType initial_window = 16u,
+        SizeType active_window = 8u,
+        SizeType refresh_period = 8u)
         : _initial_window(initial_window),
           _active_window(active_window),
-          _refresh_period(refresh_period)
-    {
-        ARIADNE_PRECONDITION(initial_window>0u);
-        ARIADNE_PRECONDITION(active_window>0u);
-        ARIADNE_PRECONDITION(refresh_period>0u);
+          _refresh_period(refresh_period) {
+        ARIADNE_PRECONDITION(initial_window > 0u);
+        ARIADNE_PRECONDITION(active_window > 0u);
+        ARIADNE_PRECONDITION(refresh_period > 0u);
     }
 
-    Bool request()
-    {
-        if(_active) {
+    Bool request() {
+        if (_active) {
             return true;
         }
         ++_suspended_boxes;
-        if(_suspended_boxes==_refresh_period) {
-            _suspended_boxes=0u;
+        if (_suspended_boxes == _refresh_period) {
+            _suspended_boxes = 0u;
             return true;
         }
         ++_skipped;
         return false;
     }
 
-    Void observe(SmtPreclassificationOutcome outcome)
-    {
-        Bool const hit=outcome!=SmtPreclassificationOutcome::UNRESOLVED;
-        if(not _active) {
-            if(hit) {
-                _active=true;
-                _initial=false;
-                _active_checks=0u;
-                _active_hits=0u;
+    Void observe(SmtPreclassificationOutcome outcome) {
+        const Bool hit = outcome != SmtPreclassificationOutcome::UNRESOLVED;
+        if (not _active) {
+            if (hit) {
+                _active = true;
+                _initial = false;
+                _active_checks = 0u;
+                _active_hits = 0u;
                 ++_reactivations;
             }
             return;
         }
 
         ++_active_checks;
-        if(hit) {
+        if (hit) {
             ++_active_hits;
         }
-        SizeType const window=_initial ? _initial_window : _active_window;
-        if(_active_checks==window) {
-            if(_active_hits==0u) {
-                _active=false;
-                _initial=false;
-                _suspended_boxes=0u;
+        const SizeType window = _initial ? _initial_window : _active_window;
+        if (_active_checks == window) {
+            if (_active_hits == 0u) {
+                _active = false;
+                _initial = false;
+                _suspended_boxes = 0u;
                 ++_suspensions;
             } else {
-                _initial=false;
-                _active_checks=0u;
-                _active_hits=0u;
+                _initial = false;
+                _active_checks = 0u;
+                _active_hits = 0u;
             }
         }
     }
@@ -577,159 +555,152 @@ SmtSolverConfiguration::SmtSolverConfiguration(
       _hull_reduction_enabled(hull_reduction_enabled),
       _interval_newton_reduction_enabled(interval_newton_reduction_enabled),
       _preclassification_enabled(preclassification_enabled),
-      _adaptive_preclassification_enabled(adaptive_preclassification_enabled)
-{
-    ARIADNE_PRECONDITION(epsilon>ExactDouble(0));
+      _adaptive_preclassification_enabled(adaptive_preclassification_enabled) {
+    ARIADNE_PRECONDITION(epsilon > ExactDouble(0));
     ARIADNE_PRECONDITION(
         not adaptive_preclassification_enabled || preclassification_enabled);
 }
 
 SmtResult::SmtResult(SmtResultStatus status, SmtSearchStatistics statistics)
-    : _status(status), _witness(), _statistics(statistics)
-{
+    : _status(status), _witness(), _statistics(statistics) {
 }
 
-SmtResult::SmtResult(SmtResultStatus status, UpperBoxType const& witness,
+SmtResult::SmtResult(SmtResultStatus status, const UpperBoxType& witness,
                      SmtSearchStatistics statistics)
-    : _status(status), _witness(witness), _statistics(statistics)
-{
+    : _status(status), _witness(witness), _statistics(statistics) {
 }
 
-SmtResult SmtResult::unsat(SmtSearchStatistics statistics)
-{
-    return SmtResult(SmtResultStatus::UNSAT,statistics);
+SmtResult SmtResult::unsat(SmtSearchStatistics statistics) {
+    return SmtResult(SmtResultStatus::UNSAT, statistics);
 }
 
-SmtResult SmtResult::epsilon_sat(UpperBoxType const& witness,
-                                 SmtSearchStatistics statistics)
-{
-    return SmtResult(SmtResultStatus::EPSILON_SAT,witness,statistics);
+SmtResult SmtResult::epsilon_sat(const UpperBoxType& witness,
+                                 SmtSearchStatistics statistics) {
+    return SmtResult(SmtResultStatus::EPSILON_SAT, witness, statistics);
 }
 
 SmtResult SmtResult::unknown(
     SmtUnknownReason reason,
-    SmtSearchStatistics statistics)
-{
-    ARIADNE_PRECONDITION(reason!=SmtUnknownReason::NONE);
-    SmtResult result(SmtResultStatus::UNKNOWN,statistics);
-    result._unknown_reason=reason;
+    SmtSearchStatistics statistics) {
+    ARIADNE_PRECONDITION(reason != SmtUnknownReason::NONE);
+    SmtResult result(SmtResultStatus::UNKNOWN, statistics);
+    result._unknown_reason = reason;
     return result;
 }
 
-UpperBoxType const& SmtResult::witness() const
-{
+const UpperBoxType& SmtResult::witness() const {
     ARIADNE_PRECONDITION(this->has_witness());
     return *_witness;
 }
 
-OutputStream& operator<<(OutputStream& os, SmtResultStatus status)
-{
-    switch(status) {
-        case SmtResultStatus::UNSAT: return os << "UNSAT";
-        case SmtResultStatus::EPSILON_SAT: return os << "EPSILON_SAT";
-        case SmtResultStatus::UNKNOWN: return os << "UNKNOWN";
-        default: throw std::runtime_error("Unknown SmtResultStatus");
+OutputStream& operator<<(OutputStream& os, SmtResultStatus status) {
+    switch (status) {
+        case SmtResultStatus::UNSAT:
+            return os << "UNSAT";
+        case SmtResultStatus::EPSILON_SAT:
+            return os << "EPSILON_SAT";
+        case SmtResultStatus::UNKNOWN:
+            return os << "UNKNOWN";
+        default:
+            throw std::runtime_error("Unknown SmtResultStatus");
     }
 }
 
-OutputStream& operator<<(OutputStream& os, SmtUnknownReason reason)
-{
-    switch(reason) {
-        case SmtUnknownReason::NONE: return os << "NONE";
-        case SmtUnknownReason::RESOURCE_EXHAUSTED: return os << "RESOURCE_EXHAUSTED";
-        case SmtUnknownReason::DP_RESOLUTION_EXHAUSTED: return os << "DP_RESOLUTION_EXHAUSTED";
-        case SmtUnknownReason::MIXED: return os << "MIXED";
-        default: throw std::runtime_error("Unknown SmtUnknownReason");
+OutputStream& operator<<(OutputStream& os, SmtUnknownReason reason) {
+    switch (reason) {
+        case SmtUnknownReason::NONE:
+            return os << "NONE";
+        case SmtUnknownReason::RESOURCE_EXHAUSTED:
+            return os << "RESOURCE_EXHAUSTED";
+        case SmtUnknownReason::DP_RESOLUTION_EXHAUSTED:
+            return os << "DP_RESOLUTION_EXHAUSTED";
+        case SmtUnknownReason::MIXED:
+            return os << "MIXED";
+        default:
+            throw std::runtime_error("Unknown SmtUnknownReason");
     }
 }
 
-ExactIntervalType SmtSolver::_original_bounds(SmtTheoryPrimitiveRelation relation) const
-{
+ExactIntervalType SmtSolver::_original_bounds(SmtTheoryPrimitiveRelation relation) const {
     SmtSolverTestSupport::validate_primitive_relation(relation);
-    if(relation==SmtTheoryPrimitiveRelation::EQ_ZERO) {
-        return ExactIntervalType(0,0);
+    if (relation == SmtTheoryPrimitiveRelation::EQ_ZERO) {
+        return ExactIntervalType(0, 0);
     }
-    return ExactIntervalType(0,+infty);
+    return ExactIntervalType(0, +infty);
 }
 
-ExactIntervalType SmtSolver::_epsilon_bounds(ValidatedConstraint const& constraint) const
-{
-    FloatDP epsilon(_configuration.epsilon(),dp);
-    ExactIntervalType bounds=constraint.bounds();
+ExactIntervalType SmtSolver::_epsilon_bounds(const ValidatedConstraint& constraint) const {
+    FloatDP epsilon(_configuration.epsilon(), dp);
+    ExactIntervalType bounds = constraint.bounds();
     return ExactIntervalType(
-        sub(down,bounds.lower_bound(),epsilon),
-        add(up,bounds.upper_bound(),epsilon));
+        sub(down, bounds.lower_bound(), epsilon),
+        add(up, bounds.upper_bound(), epsilon));
 }
 
 ExactIntervalType
-SmtSolver::_epsilon_bounds(CompiledTheoryLiteral const& literal) const
-{
-    FloatDP epsilon(_configuration.epsilon(),dp);
+    SmtSolver::_epsilon_bounds(const CompiledTheoryLiteral& literal) const {
+    FloatDP epsilon(_configuration.epsilon(), dp);
     return ExactIntervalType(
-        sub(down,literal.bounds.lower_bound(),epsilon),
-        add(up,literal.bounds.upper_bound(),epsilon));
+        sub(down, literal.bounds.lower_bound(), epsilon),
+        add(up, literal.bounds.upper_bound(), epsilon));
 }
 
-
 Bool SmtSolver::_original_reduce(UpperBoxType& domain,
-                                 List<ValidatedConstraint> const& constraints,
-                                 ReductionStatistics& statistics) const
-{
+                                 const List<ValidatedConstraint>& constraints,
+                                 ReductionStatistics& statistics) const {
     ConstraintSolver contractor;
     ConstraintPropagationStatistics propagation_statistics;
-    Bool const empty=contractor.propagate(
-        domain,constraints,propagation_statistics,
+    const Bool empty = contractor.propagate(
+        domain, constraints, propagation_statistics,
         _configuration.shaving_reduction_enabled(),
         _configuration.hull_reduction_enabled());
-    statistics.hull_rounds+=propagation_statistics.hull_rounds;
-    statistics.hull_effective+=propagation_statistics.hull_effective;
-    statistics.hull_procedure_builds+=
+    statistics.hull_rounds += propagation_statistics.hull_rounds;
+    statistics.hull_effective += propagation_statistics.hull_effective;
+    statistics.hull_procedure_builds +=
         propagation_statistics.hull_procedure_builds;
-    statistics.hull_procedure_build_seconds+=
+    statistics.hull_procedure_build_seconds +=
         propagation_statistics.hull_procedure_build_seconds;
-    statistics.hull_contraction_seconds+=
+    statistics.hull_contraction_seconds +=
         propagation_statistics.hull_contraction_seconds;
-    statistics.hull_direct_rejection_seconds+=
+    statistics.hull_direct_rejection_seconds +=
         propagation_statistics.hull_direct_rejection_seconds;
-    statistics.hull_temporary_allocation_seconds+=
+    statistics.hull_temporary_allocation_seconds +=
         propagation_statistics.hull_temporary_allocation_seconds;
-    statistics.hull_forward_execution_seconds+=
+    statistics.hull_forward_execution_seconds +=
         propagation_statistics.hull_forward_execution_seconds;
-    statistics.hull_backward_propagation_seconds+=
+    statistics.hull_backward_propagation_seconds +=
         propagation_statistics.hull_backward_propagation_seconds;
-    statistics.shaving_rounds+=propagation_statistics.shaving_rounds;
-    statistics.shaving_effective+=propagation_statistics.shaving_effective;
-    statistics.shaving_coordinate_attempts+=
+    statistics.shaving_rounds += propagation_statistics.shaving_rounds;
+    statistics.shaving_effective += propagation_statistics.shaving_effective;
+    statistics.shaving_coordinate_attempts +=
         propagation_statistics.shaving_coordinate_attempts;
-    statistics.shaving_coordinate_effective+=
+    statistics.shaving_coordinate_effective +=
         propagation_statistics.shaving_coordinate_effective;
-    statistics.shaving_dependency_skipped+=
+    statistics.shaving_dependency_skipped +=
         propagation_statistics.shaving_dependency_skipped;
-    statistics.shaving_adaptive_skipped+=
+    statistics.shaving_adaptive_skipped +=
         propagation_statistics.shaving_adaptive_skipped;
-    statistics.shaving_refresh_rounds+=
+    statistics.shaving_refresh_rounds +=
         propagation_statistics.shaving_refresh_rounds;
-    statistics.shaving_active_rounds+=
+    statistics.shaving_active_rounds +=
         propagation_statistics.shaving_active_rounds;
-    statistics.shaving_function_evaluations+=
+    statistics.shaving_function_evaluations +=
         propagation_statistics.shaving_function_evaluations;
-    statistics.shaving_seconds+=propagation_statistics.shaving_seconds;
+    statistics.shaving_seconds += propagation_statistics.shaving_seconds;
     return empty;
 }
 
 Bool SmtSolver::_epsilon_satisfied(
-    UpperBoxType const& domain,
-    ValidatedConstraint const& constraint) const
-{
-    UpperIntervalType image=apply(constraint.function(),domain);
-    return definitely(subset(image,this->_epsilon_bounds(constraint)));
+    const UpperBoxType& domain,
+    const ValidatedConstraint& constraint) const {
+    UpperIntervalType image = apply(constraint.function(), domain);
+    return definitely(subset(image, this->_epsilon_bounds(constraint)));
 }
 
-Bool SmtSolver::_epsilon_satisfied(UpperBoxType const& domain,
-                                   List<ValidatedConstraint> const& constraints) const
-{
-    for(SizeType i=0; i!=constraints.size(); ++i) {
-        if(not this->_epsilon_satisfied(domain,constraints[i])) {
+Bool SmtSolver::_epsilon_satisfied(const UpperBoxType& domain,
+                                   const List<ValidatedConstraint>& constraints) const {
+    for (SizeType i = 0; i != constraints.size(); ++i) {
+        if (not this->_epsilon_satisfied(domain, constraints[i])) {
             return false;
         }
     }
@@ -737,89 +708,84 @@ Bool SmtSolver::_epsilon_satisfied(UpperBoxType const& domain,
 }
 
 SmtSolver::CompiledTheoryLiterals
-SmtSolver::_compile_theory_literals(RealSpace const& space,
-                                    List<SmtTheoryPrimitiveLiteral> const& literals) const
-{
+    SmtSolver::_compile_theory_literals(const RealSpace& space,
+                                        const List<SmtTheoryPrimitiveLiteral>& literals) const {
     CompiledTheoryLiterals result;
     result.reserve(literals.size());
-    for(SizeType i=0; i!=literals.size(); ++i) {
-        RealExpression expression=simplify(literals[i].expression());
-        if(is_constant(expression,Real(0))) {
+    for (SizeType i = 0; i != literals.size(); ++i) {
+        RealExpression expression = simplify(literals[i].expression());
+        if (is_constant(expression, Real(0))) {
             continue;
         }
-        ValidatedScalarMultivariateFunction function(make_function(space,expression));
+        ValidatedScalarMultivariateFunction function(make_function(space, expression));
         std::vector<std::optional<ValidatedScalarMultivariateFunction>> derivatives;
-        if(_configuration.monotone_reduction_enabled()
-           || _configuration.sensitivity_split_enabled()) {
+        if (_configuration.monotone_reduction_enabled() || _configuration.sensitivity_split_enabled()) {
             derivatives.reserve(space.dimension());
-            for(SizeType variable=0u; variable!=space.dimension(); ++variable) {
+            for (SizeType variable = 0u; variable != space.dimension(); ++variable) {
                 derivatives.push_back(
                     SmtSolverTestSupport::optional_derivative(
-                        expression,function,variable));
+                        expression, function, variable));
             }
         }
-        SmtTheoryPrimitiveRelation relation=literals[i].relation();
-        result.push_back({
-            function,
-            this->_original_bounds(relation),
-            std::move(derivatives),
-            relation==SmtTheoryPrimitiveRelation::GT_ZERO,
-            false,
-            nullptr
-        });
-        result.back().hull_procedure=std::make_shared<ValidatedProcedure>(function);
+        SmtTheoryPrimitiveRelation relation = literals[i].relation();
+        result.push_back({function,
+                          this->_original_bounds(relation),
+                          std::move(derivatives),
+                          relation == SmtTheoryPrimitiveRelation::GT_ZERO,
+                          false,
+                          nullptr});
+        result.back().hull_procedure = std::make_shared<ValidatedProcedure>(function);
     }
     return result;
 }
 
 Bool SmtSolver::_original_reduce(UpperBoxType& domain,
-                                 CompiledTheoryLiterals const& literals,
-                                 ReductionStatistics& statistics) const
-{
+                                 const CompiledTheoryLiterals& literals,
+                                 ReductionStatistics& statistics) const {
     ConstraintSolver contractor;
     ConstraintPropagationStatistics propagation_statistics;
-    auto accumulate_propagation_statistics=[&]() {
-        statistics.hull_rounds+=propagation_statistics.hull_rounds;
-        statistics.hull_effective+=propagation_statistics.hull_effective;
-        statistics.hull_procedure_builds+=
+    auto accumulate_propagation_statistics = [&]() {
+        statistics.hull_rounds += propagation_statistics.hull_rounds;
+        statistics.hull_effective += propagation_statistics.hull_effective;
+        statistics.hull_procedure_builds +=
             propagation_statistics.hull_procedure_builds;
-        statistics.hull_procedure_build_seconds+=
+        statistics.hull_procedure_build_seconds +=
             propagation_statistics.hull_procedure_build_seconds;
-        statistics.hull_contraction_seconds+=
+        statistics.hull_contraction_seconds +=
             propagation_statistics.hull_contraction_seconds;
-        statistics.hull_direct_rejection_seconds+=
+        statistics.hull_direct_rejection_seconds +=
             propagation_statistics.hull_direct_rejection_seconds;
-        statistics.hull_temporary_allocation_seconds+=
+        statistics.hull_temporary_allocation_seconds +=
             propagation_statistics.hull_temporary_allocation_seconds;
-        statistics.hull_forward_execution_seconds+=
+        statistics.hull_forward_execution_seconds +=
             propagation_statistics.hull_forward_execution_seconds;
-        statistics.hull_backward_propagation_seconds+=
+        statistics.hull_backward_propagation_seconds +=
             propagation_statistics.hull_backward_propagation_seconds;
-        statistics.shaving_rounds+=propagation_statistics.shaving_rounds;
-        statistics.shaving_effective+=propagation_statistics.shaving_effective;
-        statistics.shaving_coordinate_attempts+=
+        statistics.shaving_rounds += propagation_statistics.shaving_rounds;
+        statistics.shaving_effective += propagation_statistics.shaving_effective;
+        statistics.shaving_coordinate_attempts +=
             propagation_statistics.shaving_coordinate_attempts;
-        statistics.shaving_coordinate_effective+=
+        statistics.shaving_coordinate_effective +=
             propagation_statistics.shaving_coordinate_effective;
-        statistics.shaving_dependency_skipped+=
+        statistics.shaving_dependency_skipped +=
             propagation_statistics.shaving_dependency_skipped;
-        statistics.shaving_adaptive_skipped+=
+        statistics.shaving_adaptive_skipped +=
             propagation_statistics.shaving_adaptive_skipped;
-        statistics.shaving_refresh_rounds+=
+        statistics.shaving_refresh_rounds +=
             propagation_statistics.shaving_refresh_rounds;
-        statistics.shaving_active_rounds+=
+        statistics.shaving_active_rounds +=
             propagation_statistics.shaving_active_rounds;
-        statistics.shaving_function_evaluations+=
+        statistics.shaving_function_evaluations +=
             propagation_statistics.shaving_function_evaluations;
-        statistics.shaving_seconds+=propagation_statistics.shaving_seconds;
-        statistics.monotone_rounds+=propagation_statistics.monotone_rounds;
-        statistics.monotone_effective+=propagation_statistics.monotone_effective;
+        statistics.shaving_seconds += propagation_statistics.shaving_seconds;
+        statistics.monotone_rounds += propagation_statistics.monotone_rounds;
+        statistics.monotone_effective += propagation_statistics.monotone_effective;
     };
 
-    auto const newton_candidates=
+    const auto newton_candidates =
         _configuration.interval_newton_reduction_enabled()
             ? interval_newton_subsystem_candidates(
-                literals,domain.dimension())
+                  literals, domain.dimension())
             : std::vector<std::vector<SizeType>>();
 
     enum class IntervalNewtonOutcome {
@@ -829,103 +795,100 @@ Bool SmtSolver::_original_reduce(UpperBoxType& domain,
         SINGULAR
     };
 
-    auto interval_newton_attempt=
-        [&](std::vector<SizeType> const& newton_subsystem) {
+    auto interval_newton_attempt =
+        [&](const std::vector<SizeType>& newton_subsystem) {
             ++statistics.interval_newton_attempts;
-            auto const newton_start=std::chrono::steady_clock::now();
+            const auto newton_start = std::chrono::steady_clock::now();
             try {
                 ValidatedVectorMultivariateFunction function(
                     domain.dimension(),
                     literals[newton_subsystem[0u]].function.domain());
-                for(SizeType i=0u;i!=newton_subsystem.size();++i) {
-                    function[i]=literals[newton_subsystem[i]].function;
+                for (SizeType i = 0u; i != newton_subsystem.size(); ++i) {
+                    function[i] = literals[newton_subsystem[i]].function;
                 }
 
-                Vector<EquationSolverInterface::ValidatedNumericType> current=
+                Vector<EquationSolverInterface::ValidatedNumericType> current =
                     cast_singleton(cast_exact_box(domain));
-                IntervalNewtonSolver newton_solver(1e-12,1u);
-                Vector<EquationSolverInterface::ValidatedNumericType> image=
-                    newton_solver.step(function,current);
+                IntervalNewtonSolver newton_solver(1e-12, 1u);
+                Vector<EquationSolverInterface::ValidatedNumericType> image =
+                    newton_solver.step(function, current);
 
-                if(not consistent(image,current)) {
+                if (not consistent(image, current)) {
                     ++statistics.interval_newton_infeasible;
-                    statistics.interval_newton_seconds+=
+                    statistics.interval_newton_seconds +=
                         elapsed_seconds(newton_start);
                     return IntervalNewtonOutcome::INFEASIBLE;
                 }
 
-                Bool effective=false;
-                for(SizeType i=0u;i!=domain.dimension();++i) {
-                    auto contracted=refinement(image[i],current[i]);
+                Bool effective = false;
+                for (SizeType i = 0u; i != domain.dimension(); ++i) {
+                    auto contracted = refinement(image[i], current[i]);
                     UpperIntervalType next(
-                        contracted.lower(),contracted.upper());
-                    Bool const same_lower=
-                        next.lower_bound().raw()==domain[i].lower_bound().raw();
-                    Bool const same_upper=
-                        next.upper_bound().raw()==domain[i].upper_bound().raw();
-                    Bool const same=
-                        static_cast<unsigned>(same_lower)
-                        & static_cast<unsigned>(same_upper);
-                    if(not same) {
-                        effective=true;
+                        contracted.lower(), contracted.upper());
+                    const Bool same_lower =
+                        next.lower_bound().raw() == domain[i].lower_bound().raw();
+                    const Bool same_upper =
+                        next.upper_bound().raw() == domain[i].upper_bound().raw();
+                    const Bool same =
+                        static_cast<unsigned>(same_lower) & static_cast<unsigned>(same_upper);
+                    if (not same) {
+                        effective = true;
                     }
-                    domain[i]=next;
+                    domain[i] = next;
                 }
-                statistics.interval_newton_seconds+=
+                statistics.interval_newton_seconds +=
                     elapsed_seconds(newton_start);
-                if(effective) {
+                if (effective) {
                     ++statistics.interval_newton_effective;
                     return IntervalNewtonOutcome::EFFECTIVE;
                 }
                 return IntervalNewtonOutcome::INEFFECTIVE;
-            }
-            catch(const SingularMatrixException&) {
+            } catch (const SingularMatrixException&) {
                 ++statistics.interval_newton_singular;
-                statistics.interval_newton_seconds+=
+                statistics.interval_newton_seconds +=
                     elapsed_seconds(newton_start);
                 return IntervalNewtonOutcome::SINGULAR;
             }
         };
 
     std::optional<std::vector<SizeType>> retry_newton_subsystem;
-    for(SizeType candidate=0u; candidate!=newton_candidates.size();) {
-        auto const& newton_subsystem=retry_newton_subsystem.has_value()
-            ? *retry_newton_subsystem
-            : newton_candidates[candidate];
-        IntervalNewtonOutcome const outcome=
+    for (SizeType candidate = 0u; candidate != newton_candidates.size();) {
+        const auto& newton_subsystem = retry_newton_subsystem.has_value()
+                                         ? *retry_newton_subsystem
+                                         : newton_candidates[candidate];
+        const IntervalNewtonOutcome outcome =
             interval_newton_attempt(newton_subsystem);
 
-        if(outcome==IntervalNewtonOutcome::INFEASIBLE) {
+        if (outcome == IntervalNewtonOutcome::INFEASIBLE) {
             accumulate_propagation_statistics();
             return true;
         }
 
-        if(retry_newton_subsystem.has_value()) {
+        if (retry_newton_subsystem.has_value()) {
             break;
         }
 
-        if(outcome==IntervalNewtonOutcome::SINGULAR) {
+        if (outcome == IntervalNewtonOutcome::SINGULAR) {
             ++candidate;
             continue;
         }
 
-        Bool const stage_retry=
-            static_cast<unsigned>(outcome==IntervalNewtonOutcome::INEFFECTIVE)
-            & static_cast<unsigned>(_configuration.hull_reduction_enabled());
-        if(stage_retry) {
-            if(contractor.propagate_hull_once(
-                    domain,literals,propagation_statistics)) {
+        const Bool stage_retry =
+            static_cast<unsigned>(outcome == IntervalNewtonOutcome::INEFFECTIVE) & static_cast<unsigned>(_configuration.hull_reduction_enabled());
+        if (stage_retry) {
+            if (contractor.propagate_hull_once(
+                    domain, literals, propagation_statistics)) {
                 accumulate_propagation_statistics();
                 return true;
             }
-            retry_newton_subsystem=newton_subsystem;
+            retry_newton_subsystem = newton_subsystem;
             continue;
         }
 
         break;
     }
 
-    Bool const empty=contractor.propagate(
+    const Bool empty = contractor.propagate(
         domain,
         literals,
         _configuration.monotone_reduction_enabled(),
@@ -937,28 +900,26 @@ Bool SmtSolver::_original_reduce(UpperBoxType& domain,
 }
 
 Bool SmtSolver::_epsilon_satisfied(
-    UpperBoxType const& domain,
-    CompiledTheoryLiteral const& literal) const
-{
-    FloatDP epsilon(_configuration.epsilon(),dp);
-    UpperIntervalType image=apply(literal.function,domain);
-    auto relaxed_lower=sub(down,literal.bounds.lower_bound(),epsilon);
-    auto relaxed_upper=add(up,literal.bounds.upper_bound(),epsilon);
-    if(literal.strict_lower) {
-        if(not definitely(image.lower_bound()>relaxed_lower)) {
+    const UpperBoxType& domain,
+    const CompiledTheoryLiteral& literal) const {
+    FloatDP epsilon(_configuration.epsilon(), dp);
+    UpperIntervalType image = apply(literal.function, domain);
+    auto relaxed_lower = sub(down, literal.bounds.lower_bound(), epsilon);
+    auto relaxed_upper = add(up, literal.bounds.upper_bound(), epsilon);
+    if (literal.strict_lower) {
+        if (not definitely(image.lower_bound() > relaxed_lower)) {
             return false;
         }
-    } else if(not definitely(image.lower_bound()>=relaxed_lower)) {
+    } else if (not definitely(image.lower_bound() >= relaxed_lower)) {
         return false;
     }
-    return definitely(image.upper_bound()<=relaxed_upper);
+    return definitely(image.upper_bound() <= relaxed_upper);
 }
 
-Bool SmtSolver::_epsilon_satisfied(UpperBoxType const& domain,
-                                   CompiledTheoryLiterals const& literals) const
-{
-    for(auto const& literal:literals) {
-        if(not this->_epsilon_satisfied(domain,literal)) {
+Bool SmtSolver::_epsilon_satisfied(const UpperBoxType& domain,
+                                   const CompiledTheoryLiterals& literals) const {
+    for (const auto& literal: literals) {
+        if (not this->_epsilon_satisfied(domain, literal)) {
             return false;
         }
     }
@@ -966,111 +927,102 @@ Bool SmtSolver::_epsilon_satisfied(UpperBoxType const& domain,
 }
 
 SmtSolver::DirectClassification
-SmtSolver::_direct_classification(
-    UpperBoxType const&,
-    List<ValidatedConstraint> const&,
-    ReductionStatistics&,
-    Bool) const
-{
+    SmtSolver::_direct_classification(
+        const UpperBoxType&,
+        const List<ValidatedConstraint>&,
+        ReductionStatistics&,
+        Bool) const {
     return {};
 }
 
 SmtSolver::DirectClassification
-SmtSolver::_direct_classification(
-    UpperBoxType const& domain,
-    CompiledTheoryLiterals const& literals,
-    ReductionStatistics& statistics,
-    Bool allow_preclassification) const
-{
+    SmtSolver::_direct_classification(
+        const UpperBoxType& domain,
+        const CompiledTheoryLiterals& literals,
+        ReductionStatistics& statistics,
+        Bool allow_preclassification) const {
     DirectClassification result;
-    Bool const newton_eligible=interval_newton_eligible(
+    const Bool newton_eligible = interval_newton_eligible(
         _configuration.interval_newton_reduction_enabled(),
-        literals,domain.dimension());
-    Bool const contractors_enabled=contractor_enabled(
+        literals, domain.dimension());
+    const Bool contractors_enabled = contractor_enabled(
         _configuration.hull_reduction_enabled(),
         _configuration.shaving_reduction_enabled(),
         _configuration.monotone_reduction_enabled(),
         newton_eligible);
-    Bool const preclassification=
-        contractors_enabled
-        && _configuration.preclassification_enabled()
-        && allow_preclassification;
-    if(contractors_enabled && not preclassification) {
+    const Bool preclassification =
+        contractors_enabled && _configuration.preclassification_enabled() && allow_preclassification;
+    if (contractors_enabled && not preclassification) {
         return result;
     }
 
-    result.used=true;
-    result.preclassification=preclassification;
-    if(not preclassification) {
+    result.used = true;
+    result.preclassification = preclassification;
+    if (not preclassification) {
         ++statistics.hull_rounds;
     }
-    Bool all_epsilon_satisfied=true;
-    FloatDP epsilon(_configuration.epsilon(),dp);
-    auto const start=std::chrono::steady_clock::now();
+    Bool all_epsilon_satisfied = true;
+    FloatDP epsilon(_configuration.epsilon(), dp);
+    const auto start = std::chrono::steady_clock::now();
 
-    for(auto const& literal:literals) {
+    for (const auto& literal: literals) {
         ++result.literal_evaluations;
-        UpperIntervalType image=apply(literal.function,domain);
+        UpperIntervalType image = apply(literal.function, domain);
 
-        Bool original_infeasible=false;
-        if(literal.strict_lower
-           && definitely(image.upper_bound()<=literal.bounds.lower_bound())) {
-            original_infeasible=true;
-        } else if(definitely(disjoint(image,literal.bounds))) {
-            original_infeasible=true;
+        Bool original_infeasible = false;
+        if (literal.strict_lower && definitely(image.upper_bound() <= literal.bounds.lower_bound())) {
+            original_infeasible = true;
+        } else if (definitely(disjoint(image, literal.bounds))) {
+            original_infeasible = true;
         }
-        if(original_infeasible) {
-            result.pruned=true;
-            all_epsilon_satisfied=false;
+        if (original_infeasible) {
+            result.pruned = true;
+            all_epsilon_satisfied = false;
             break;
         }
 
-        auto relaxed_lower=sub(down,literal.bounds.lower_bound(),epsilon);
-        auto relaxed_upper=add(up,literal.bounds.upper_bound(),epsilon);
-        Bool epsilon_satisfied=true;
-        if(literal.strict_lower) {
-            epsilon_satisfied=
-                definitely(image.lower_bound()>relaxed_lower);
+        auto relaxed_lower = sub(down, literal.bounds.lower_bound(), epsilon);
+        auto relaxed_upper = add(up, literal.bounds.upper_bound(), epsilon);
+        Bool epsilon_satisfied = true;
+        if (literal.strict_lower) {
+            epsilon_satisfied =
+                definitely(image.lower_bound() > relaxed_lower);
         } else {
-            epsilon_satisfied=
-                definitely(image.lower_bound()>=relaxed_lower);
+            epsilon_satisfied =
+                definitely(image.lower_bound() >= relaxed_lower);
         }
-        epsilon_satisfied=
-            epsilon_satisfied
-            && definitely(image.upper_bound()<=relaxed_upper);
-        if(not epsilon_satisfied) {
-            all_epsilon_satisfied=false;
+        epsilon_satisfied =
+            epsilon_satisfied && definitely(image.upper_bound() <= relaxed_upper);
+        if (not epsilon_satisfied) {
+            all_epsilon_satisfied = false;
         }
     }
 
-    result.seconds=elapsed_seconds(start);
-    if(not result.preclassification) {
-        statistics.hull_direct_rejection_seconds+=result.seconds;
+    result.seconds = elapsed_seconds(start);
+    if (not result.preclassification) {
+        statistics.hull_direct_rejection_seconds += result.seconds;
     }
-    result.epsilon_satisfied=all_epsilon_satisfied;
+    result.epsilon_satisfied = all_epsilon_satisfied;
     return result;
 }
 
-ValidatedScalarMultivariateFunction const&
-SmtSolver::_function(ValidatedConstraint const& constraint) const
-{
+const ValidatedScalarMultivariateFunction&
+    SmtSolver::_function(const ValidatedConstraint& constraint) const {
     return constraint.function();
 }
 
-ValidatedScalarMultivariateFunction const&
-SmtSolver::_function(CompiledTheoryLiteral const& literal) const
-{
+const ValidatedScalarMultivariateFunction&
+    SmtSolver::_function(const CompiledTheoryLiteral& literal) const {
     return literal.function;
 }
 
 template<class Conjunction>
 std::optional<UpperBoxType>
-SmtSolver::_epsilon_witness(
-    UpperBoxType const& domain,
-    Conjunction const& conjunction) const
-{
-    for(UpperBoxType const& candidate:epsilon_witness_candidates(domain)) {
-        if(this->_epsilon_satisfied(candidate,conjunction)) {
+    SmtSolver::_epsilon_witness(
+        const UpperBoxType& domain,
+        const Conjunction& conjunction) const {
+    for (const UpperBoxType& candidate: epsilon_witness_candidates(domain)) {
+        if (this->_epsilon_satisfied(candidate, conjunction)) {
             return candidate;
         }
     }
@@ -1079,95 +1031,90 @@ SmtSolver::_epsilon_witness(
 
 template<class Conjunction>
 UpperBoxType
-SmtSolver::_epsilon_candidate_witness(
-    UpperBoxType const& domain,
-    Conjunction const& conjunction) const
-{
-
+    SmtSolver::_epsilon_candidate_witness(
+        const UpperBoxType& domain,
+        const Conjunction& conjunction) const {
     ValidatedVectorMultivariateFunction function(
-        conjunction.size(),this->_function(conjunction[0]).domain());
+        conjunction.size(), this->_function(conjunction[0]).domain());
     ExactBoxType codomain(conjunction.size());
-    for(SizeType i=0u; i!=conjunction.size(); ++i) {
-        function[i]=this->_function(conjunction[i]);
-        codomain[i]=this->_epsilon_bounds(conjunction[i]);
+    for (SizeType i = 0u; i != conjunction.size(); ++i) {
+        function[i] = this->_function(conjunction[i]);
+        codomain[i] = this->_epsilon_bounds(conjunction[i]);
     }
 
     NonlinearInfeasibleInteriorPointSolver candidate_solver;
-    auto result=candidate_solver.feasible_candidate(
-        cast_exact_box(domain),function,codomain);
+    auto result = candidate_solver.feasible_candidate(
+        cast_exact_box(domain), function, codomain);
     return singleton_box(cast_exact(result.second));
 }
 
 template<class Conjunction>
 SmtSolver::SplitBoxResult
-SmtSolver::_split_box(
-    UpperBoxType const& domain,
-    Conjunction const& conjunction,
-    SizeType& derivatives_built,
-    SizeType& derivative_evaluations,
-    double& derivative_build_seconds,
-    double& derivative_evaluation_seconds) const
-{
+    SmtSolver::_split_box(
+        const UpperBoxType& domain,
+        const Conjunction& conjunction,
+        SizeType& derivatives_built,
+        SizeType& derivative_evaluations,
+        double& derivative_build_seconds,
+        double& derivative_evaluation_seconds) const {
     SplitBoxResult result;
-    if(not _configuration.sensitivity_split_enabled()
-       && not _configuration.interval_lookahead_split_enabled()) {
-        result.children=domain.split();
+    if (not _configuration.sensitivity_split_enabled() && not _configuration.interval_lookahead_split_enabled()) {
+        result.children = domain.split();
         return result;
     }
 
     std::vector<ValidatedScalarMultivariateFunction> functions;
     functions.reserve(conjunction.size());
-    for(auto const& item:conjunction) {
-        if(not this->_epsilon_satisfied(domain,item)) {
+    for (const auto& item: conjunction) {
+        if (not this->_epsilon_satisfied(domain, item)) {
             functions.push_back(this->_function(item));
         }
     }
 
-    if(_configuration.interval_lookahead_split_enabled()) {
-        auto selection=interval_lookahead_split_coordinate(
-            domain,functions,
+    if (_configuration.interval_lookahead_split_enabled()) {
+        auto selection = interval_lookahead_split_coordinate(
+            domain, functions,
             result.interval_lookahead_function_evaluations,
             result.interval_lookahead_evaluation_seconds);
-        result.children=domain.split(selection.first);
-        result.interval_lookahead_guided=true;
-        result.interval_lookahead_overrode_geometric=selection.second;
+        result.children = domain.split(selection.first);
+        result.interval_lookahead_guided = true;
+        result.interval_lookahead_overrode_geometric = selection.second;
         return result;
     }
 
-    Pair<SizeType,Pair<Bool,Bool>> selection;
-    if constexpr(std::is_same_v<Conjunction,CompiledTheoryLiterals>) {
-        std::vector<ConstraintPropagationConstraint const*> active_literals;
+    Pair<SizeType, Pair<Bool, Bool>> selection;
+    if constexpr (std::is_same_v<Conjunction, CompiledTheoryLiterals>) {
+        std::vector<const ConstraintPropagationConstraint*> active_literals;
         active_literals.reserve(conjunction.size());
-        for(auto const& item:conjunction) {
-            if(not this->_epsilon_satisfied(domain,item)) {
+        for (const auto& item: conjunction) {
+            if (not this->_epsilon_satisfied(domain, item)) {
                 active_literals.push_back(&item);
             }
         }
-        selection=cached_sensitivity_split_coordinate(
-            domain,active_literals,
+        selection = cached_sensitivity_split_coordinate(
+            domain, active_literals,
             derivative_evaluations,
             derivative_evaluation_seconds);
     } else {
-        selection=sensitivity_split_coordinate(
-            domain,functions,
+        selection = sensitivity_split_coordinate(
+            domain, functions,
             &derivatives_built,
             &derivative_evaluations,
             &derivative_build_seconds,
             &derivative_evaluation_seconds);
     }
-    result.children=domain.split(selection.first);
-    result.sensitivity_guided=selection.second.first;
-    result.sensitivity_overrode_geometric=selection.second.second;
+    result.children = domain.split(selection.first);
+    result.sensitivity_guided = selection.second.first;
+    result.sensitivity_overrode_geometric = selection.second.second;
     return result;
 }
 
 template<class Conjunction>
 SmtSolver::BoxProcessingResult
-SmtSolver::_process_box(
-    UpperBoxType domain,
-    Conjunction const& conjunction,
-    Bool allow_preclassification) const
-{
+    SmtSolver::_process_box(
+        UpperBoxType domain,
+        const Conjunction& conjunction,
+        Bool allow_preclassification) const {
     ReductionStatistics reductions;
     BoxProcessingResult result{
         BoxProcessingStatus::UNKNOWN,
@@ -1175,151 +1122,148 @@ SmtSolver::_process_box(
         std::nullopt,
         reductions};
 
-    auto direct=this->_direct_classification(
-        domain,conjunction,reductions,allow_preclassification);
-    if(direct.used) {
-        if(direct.preclassification) {
-            result.preclassification=true;
-            result.preclassification_pruned=direct.pruned;
-            result.preclassification_epsilon_satisfied=
+    auto direct = this->_direct_classification(
+        domain, conjunction, reductions, allow_preclassification);
+    if (direct.used) {
+        if (direct.preclassification) {
+            result.preclassification = true;
+            result.preclassification_pruned = direct.pruned;
+            result.preclassification_epsilon_satisfied =
                 direct.epsilon_satisfied;
-            result.preclassification_literal_evaluations=
+            result.preclassification_literal_evaluations =
                 direct.literal_evaluations;
-            result.preclassification_seconds=direct.seconds;
+            result.preclassification_seconds = direct.seconds;
         } else {
-            result.fused_direct_classification=true;
-            result.fused_direct_literal_evaluations=
+            result.fused_direct_classification = true;
+            result.fused_direct_literal_evaluations =
                 direct.literal_evaluations;
-            result.reduction_seconds=direct.seconds;
+            result.reduction_seconds = direct.seconds;
         }
-        result.reductions=reductions;
-        if(direct.pruned) {
-            result.status=BoxProcessingStatus::PRUNED;
+        result.reductions = reductions;
+        if (direct.pruned) {
+            result.status = BoxProcessingStatus::PRUNED;
             return result;
         }
-        if(direct.epsilon_satisfied) {
-            result.status=BoxProcessingStatus::EPSILON_SAT;
-            result.witness=domain;
-            result.epsilon_box_certification=true;
-            return result;
-        }
-    }
-
-    auto phase_start=std::chrono::steady_clock::now();
-    if(not direct.used || direct.preclassification) {
-        Bool const pruned=this->_original_reduce(domain,conjunction,reductions);
-        result.reductions=reductions;
-        result.reduction_seconds=elapsed_seconds(phase_start);
-        if(pruned) {
-            result.status=BoxProcessingStatus::PRUNED;
-            return result;
-        }
-
-        phase_start=std::chrono::steady_clock::now();
-        Bool const epsilon_satisfied=this->_epsilon_satisfied(domain,conjunction);
-        result.epsilon_check_seconds=elapsed_seconds(phase_start);
-        if(epsilon_satisfied) {
-            result.status=BoxProcessingStatus::EPSILON_SAT;
-            result.witness=domain;
-            result.epsilon_box_certification=true;
+        if (direct.epsilon_satisfied) {
+            result.status = BoxProcessingStatus::EPSILON_SAT;
+            result.witness = domain;
+            result.epsilon_box_certification = true;
             return result;
         }
     }
 
-    if(_configuration.deterministic_witness_probing_enabled()) {
-        phase_start=std::chrono::steady_clock::now();
-        auto witness=this->_epsilon_witness(domain,conjunction);
-        result.witness_probe_seconds=elapsed_seconds(phase_start);
-        if(witness.has_value()) {
-            result.status=BoxProcessingStatus::EPSILON_SAT;
-            result.witness=*witness;
+    auto phase_start = std::chrono::steady_clock::now();
+    if (not direct.used || direct.preclassification) {
+        const Bool pruned = this->_original_reduce(domain, conjunction, reductions);
+        result.reductions = reductions;
+        result.reduction_seconds = elapsed_seconds(phase_start);
+        if (pruned) {
+            result.status = BoxProcessingStatus::PRUNED;
+            return result;
+        }
+
+        phase_start = std::chrono::steady_clock::now();
+        const Bool epsilon_satisfied = this->_epsilon_satisfied(domain, conjunction);
+        result.epsilon_check_seconds = elapsed_seconds(phase_start);
+        if (epsilon_satisfied) {
+            result.status = BoxProcessingStatus::EPSILON_SAT;
+            result.witness = domain;
+            result.epsilon_box_certification = true;
             return result;
         }
     }
 
-    phase_start=std::chrono::steady_clock::now();
-    auto split_result=this->_split_box(
-        domain,conjunction,
+    if (_configuration.deterministic_witness_probing_enabled()) {
+        phase_start = std::chrono::steady_clock::now();
+        auto witness = this->_epsilon_witness(domain, conjunction);
+        result.witness_probe_seconds = elapsed_seconds(phase_start);
+        if (witness.has_value()) {
+            result.status = BoxProcessingStatus::EPSILON_SAT;
+            result.witness = *witness;
+            return result;
+        }
+    }
+
+    phase_start = std::chrono::steady_clock::now();
+    auto split_result = this->_split_box(
+        domain, conjunction,
         result.sensitivity_derivatives_built,
         result.sensitivity_derivative_evaluations,
         result.sensitivity_derivative_build_seconds,
         result.sensitivity_derivative_evaluation_seconds);
-    result.split_seconds=elapsed_seconds(phase_start);
-    result.interval_lookahead_guided_split=split_result.interval_lookahead_guided;
-    result.interval_lookahead_overrode_geometric_split=
+    result.split_seconds = elapsed_seconds(phase_start);
+    result.interval_lookahead_guided_split = split_result.interval_lookahead_guided;
+    result.interval_lookahead_overrode_geometric_split =
         split_result.interval_lookahead_overrode_geometric;
-    result.interval_lookahead_function_evaluations=
+    result.interval_lookahead_function_evaluations =
         split_result.interval_lookahead_function_evaluations;
-    result.interval_lookahead_evaluation_seconds=
+    result.interval_lookahead_evaluation_seconds =
         split_result.interval_lookahead_evaluation_seconds;
-    Pair<UpperBoxType,UpperBoxType> children=split_result.children;
+    Pair<UpperBoxType, UpperBoxType> children = split_result.children;
 
-    Bool const splittable=not same_box(children.first,children.second);
+    const Bool splittable = not same_box(children.first, children.second);
 
     std::optional<UpperBoxType> candidate;
-    Bool candidate_certified=false;
-    Bool const candidate_search_attempted=
+    Bool candidate_certified = false;
+    const Bool candidate_search_attempted =
         _configuration.candidate_search_enabled() & splittable;
-    if(candidate_search_attempted) {
-        phase_start=std::chrono::steady_clock::now();
-        candidate=this->_epsilon_candidate_witness(domain,conjunction);
-        candidate_certified=this->_epsilon_satisfied(*candidate,conjunction);
-        result.candidate_search_seconds=elapsed_seconds(phase_start);
+    if (candidate_search_attempted) {
+        phase_start = std::chrono::steady_clock::now();
+        candidate = this->_epsilon_candidate_witness(domain, conjunction);
+        candidate_certified = this->_epsilon_satisfied(*candidate, conjunction);
+        result.candidate_search_seconds = elapsed_seconds(phase_start);
     }
-    auto candidate_outcome=SmtSolverTestSupport::candidate_witness_outcome(
+    auto candidate_outcome = SmtSolverTestSupport::candidate_witness_outcome(
         candidate_search_attempted,
         candidate_certified ? candidate : std::nullopt);
-    if(candidate_outcome.certified) {
-        result.status=BoxProcessingStatus::EPSILON_SAT;
-        result.witness=*candidate_outcome.witness;
-        result.candidate_witness_search=true;
-        result.candidate_witness_success=true;
+    if (candidate_outcome.certified) {
+        result.status = BoxProcessingStatus::EPSILON_SAT;
+        result.witness = *candidate_outcome.witness;
+        result.candidate_witness_search = true;
+        result.candidate_witness_success = true;
         return result;
     }
 
-    if(not splittable) {
-        result.status=BoxProcessingStatus::UNKNOWN;
-        result.dp_resolution_exhausted=true;
-        result.candidate_witness_search=false;
-        result.non_splittable_epsilon_overlap=true;
+    if (not splittable) {
+        result.status = BoxProcessingStatus::UNKNOWN;
+        result.dp_resolution_exhausted = true;
+        result.candidate_witness_search = false;
+        result.non_splittable_epsilon_overlap = true;
         return result;
     }
 
-    result.status=BoxProcessingStatus::SPLIT;
-    result.children=children;
-    result.sensitivity_guided_split=split_result.sensitivity_guided;
-    result.sensitivity_overrode_geometric_split=
+    result.status = BoxProcessingStatus::SPLIT;
+    result.children = children;
+    result.sensitivity_guided_split = split_result.sensitivity_guided;
+    result.sensitivity_overrode_geometric_split =
         split_result.sensitivity_overrode_geometric;
-    result.candidate_witness_search=candidate_outcome.attempted;
+    result.candidate_witness_search = candidate_outcome.attempted;
     return result;
 }
 
 SmtSolver::BoxProcessingResult
-SmtSolver::_process_box(
-    UpperBoxType domain,
-    ConjunctionReference const& conjunction,
-    Bool allow_preclassification) const
-{
-    if(conjunction.constraints!=nullptr) {
+    SmtSolver::_process_box(
+        UpperBoxType domain,
+        const ConjunctionReference& conjunction,
+        Bool allow_preclassification) const {
+    if (conjunction.constraints != nullptr) {
         return this->_process_box(
-            std::move(domain),*conjunction.constraints,allow_preclassification);
+            std::move(domain), *conjunction.constraints, allow_preclassification);
     }
     return this->_process_box(
-        std::move(domain),*conjunction.theory_literals,allow_preclassification);
+        std::move(domain), *conjunction.theory_literals, allow_preclassification);
 }
 
-Bool
-SmtSolver::_preclassification_eligible(
-    UpperBoxType const& domain,
-    ConjunctionReference const& conjunction) const
-{
-    if(conjunction.theory_literals==nullptr) {
+Bool SmtSolver::_preclassification_eligible(
+    const UpperBoxType& domain,
+    const ConjunctionReference& conjunction) const {
+    if (conjunction.theory_literals == nullptr) {
         return false;
     }
-    auto const& literals=*conjunction.theory_literals;
-    Bool const newton_eligible=interval_newton_eligible(
+    const auto& literals = *conjunction.theory_literals;
+    const Bool newton_eligible = interval_newton_eligible(
         _configuration.interval_newton_reduction_enabled(),
-        literals,domain.dimension());
+        literals, domain.dimension());
     return contractor_enabled(
         _configuration.hull_reduction_enabled(),
         _configuration.shaving_reduction_enabled(),
@@ -1327,88 +1271,86 @@ SmtSolver::_preclassification_eligible(
         newton_eligible);
 }
 
-Void
-SmtSolver::_accumulate_box_processing_statistics(
+Void SmtSolver::_accumulate_box_processing_statistics(
     SmtSearchStatistics& statistics,
-    BoxProcessingResult const& processing) const
-{
+    const BoxProcessingResult& processing) const {
     SmtSolverTestSupport::record_parallel_processing_thread();
-    statistics.reduction_seconds+=processing.reduction_seconds;
-    statistics.hull_procedure_builds+=processing.reductions.hull_procedure_builds;
-    statistics.hull_procedure_build_seconds+=
+    statistics.reduction_seconds += processing.reduction_seconds;
+    statistics.hull_procedure_builds += processing.reductions.hull_procedure_builds;
+    statistics.hull_procedure_build_seconds +=
         processing.reductions.hull_procedure_build_seconds;
-    statistics.hull_contraction_seconds+=
+    statistics.hull_contraction_seconds +=
         processing.reductions.hull_contraction_seconds;
-    statistics.hull_direct_rejection_seconds+=
+    statistics.hull_direct_rejection_seconds +=
         processing.reductions.hull_direct_rejection_seconds;
-    statistics.hull_temporary_allocation_seconds+=
+    statistics.hull_temporary_allocation_seconds +=
         processing.reductions.hull_temporary_allocation_seconds;
-    statistics.hull_forward_execution_seconds+=
+    statistics.hull_forward_execution_seconds +=
         processing.reductions.hull_forward_execution_seconds;
-    statistics.hull_backward_propagation_seconds+=
+    statistics.hull_backward_propagation_seconds +=
         processing.reductions.hull_backward_propagation_seconds;
-    statistics.interval_newton_attempts+=
+    statistics.interval_newton_attempts +=
         processing.reductions.interval_newton_attempts;
-    statistics.interval_newton_effective_reductions+=
+    statistics.interval_newton_effective_reductions +=
         processing.reductions.interval_newton_effective;
-    statistics.interval_newton_infeasible+=
+    statistics.interval_newton_infeasible +=
         processing.reductions.interval_newton_infeasible;
-    statistics.interval_newton_singular+=
+    statistics.interval_newton_singular +=
         processing.reductions.interval_newton_singular;
-    statistics.interval_newton_seconds+=
+    statistics.interval_newton_seconds +=
         processing.reductions.interval_newton_seconds;
-    statistics.epsilon_check_seconds+=processing.epsilon_check_seconds;
-    statistics.witness_probe_seconds+=processing.witness_probe_seconds;
-    statistics.split_seconds+=processing.split_seconds;
-    statistics.sensitivity_derivatives_built+=
+    statistics.epsilon_check_seconds += processing.epsilon_check_seconds;
+    statistics.witness_probe_seconds += processing.witness_probe_seconds;
+    statistics.split_seconds += processing.split_seconds;
+    statistics.sensitivity_derivatives_built +=
         processing.sensitivity_derivatives_built;
-    statistics.sensitivity_derivative_evaluations+=
+    statistics.sensitivity_derivative_evaluations +=
         processing.sensitivity_derivative_evaluations;
-    statistics.sensitivity_derivative_build_seconds+=
+    statistics.sensitivity_derivative_build_seconds +=
         processing.sensitivity_derivative_build_seconds;
-    statistics.sensitivity_derivative_evaluation_seconds+=
+    statistics.sensitivity_derivative_evaluation_seconds +=
         processing.sensitivity_derivative_evaluation_seconds;
-    if(processing.interval_lookahead_guided_split) {
+    if (processing.interval_lookahead_guided_split) {
         ++statistics.interval_lookahead_guided_splits;
     }
-    if(processing.interval_lookahead_overrode_geometric_split) {
+    if (processing.interval_lookahead_overrode_geometric_split) {
         ++statistics.interval_lookahead_overrides_geometric_splits;
     }
-    statistics.interval_lookahead_function_evaluations+=
+    statistics.interval_lookahead_function_evaluations +=
         processing.interval_lookahead_function_evaluations;
-    statistics.interval_lookahead_evaluation_seconds+=
+    statistics.interval_lookahead_evaluation_seconds +=
         processing.interval_lookahead_evaluation_seconds;
-    statistics.shaving_coordinate_attempts+=
+    statistics.shaving_coordinate_attempts +=
         processing.reductions.shaving_coordinate_attempts;
-    statistics.shaving_coordinate_effective+=
+    statistics.shaving_coordinate_effective +=
         processing.reductions.shaving_coordinate_effective;
-    statistics.shaving_dependency_skipped+=
+    statistics.shaving_dependency_skipped +=
         processing.reductions.shaving_dependency_skipped;
-    statistics.shaving_adaptive_skipped+=
+    statistics.shaving_adaptive_skipped +=
         processing.reductions.shaving_adaptive_skipped;
-    statistics.shaving_refresh_rounds+=
+    statistics.shaving_refresh_rounds +=
         processing.reductions.shaving_refresh_rounds;
-    statistics.shaving_active_rounds+=
+    statistics.shaving_active_rounds +=
         processing.reductions.shaving_active_rounds;
-    statistics.shaving_function_evaluations+=
+    statistics.shaving_function_evaluations +=
         processing.reductions.shaving_function_evaluations;
-    statistics.shaving_seconds+=processing.reductions.shaving_seconds;
-    statistics.candidate_search_seconds+=processing.candidate_search_seconds;
-    if(processing.fused_direct_classification) {
+    statistics.shaving_seconds += processing.reductions.shaving_seconds;
+    statistics.candidate_search_seconds += processing.candidate_search_seconds;
+    if (processing.fused_direct_classification) {
         ++statistics.fused_direct_classification_boxes;
     }
-    statistics.fused_direct_literal_evaluations+=
+    statistics.fused_direct_literal_evaluations +=
         processing.fused_direct_literal_evaluations;
-    if(processing.preclassification) {
+    if (processing.preclassification) {
         ++statistics.preclassification_boxes;
-        statistics.preclassification_literal_evaluations+=
+        statistics.preclassification_literal_evaluations +=
             processing.preclassification_literal_evaluations;
-        statistics.preclassification_seconds+=
+        statistics.preclassification_seconds +=
             processing.preclassification_seconds;
-        if(processing.preclassification_pruned) {
+        if (processing.preclassification_pruned) {
             ++statistics.preclassification_pruned_boxes;
         }
-        if(processing.preclassification_epsilon_satisfied) {
+        if (processing.preclassification_epsilon_satisfied) {
             ++statistics.preclassification_epsilon_boxes;
         }
         statistics.preclassification_outcomes.push_back(
@@ -1417,146 +1359,139 @@ SmtSolver::_accumulate_box_processing_statistics(
                 processing.preclassification_epsilon_satisfied));
     }
     SmtSolverTestSupport::accumulate_box_processing_statistics(
-        statistics,{
-            processing.status,
-            processing.reductions.hull_rounds,
-            processing.reductions.hull_effective,
-            processing.reductions.shaving_rounds,
-            processing.reductions.shaving_effective,
-            processing.reductions.monotone_rounds,
-            processing.reductions.monotone_effective,
-            processing.sensitivity_guided_split,
-            processing.sensitivity_overrode_geometric_split,
-            processing.epsilon_box_certification,
-            processing.dp_resolution_exhausted,
-            processing.candidate_witness_search,
-            processing.candidate_witness_success
-        });
+        statistics, {processing.status,
+                     processing.reductions.hull_rounds,
+                     processing.reductions.hull_effective,
+                     processing.reductions.shaving_rounds,
+                     processing.reductions.shaving_effective,
+                     processing.reductions.monotone_rounds,
+                     processing.reductions.monotone_effective,
+                     processing.sensitivity_guided_split,
+                     processing.sensitivity_overrode_geometric_split,
+                     processing.epsilon_box_certification,
+                     processing.dp_resolution_exhausted,
+                     processing.candidate_witness_search,
+                     processing.candidate_witness_success});
 }
 
 SmtResult
-SmtSolver::_solve_sequential_conjunction(
-    ExactBoxType const& domain,
-    ConjunctionReference const& conjunction) const
-{
+    SmtSolver::_solve_sequential_conjunction(
+        const ExactBoxType& domain,
+        const ConjunctionReference& conjunction) const {
     SmtSearchStatistics statistics;
     SequentialSmtWorkQueue pending;
     pending.push(UpperBoxType(domain));
-    SmtUnknownReason unknown_reason=SmtUnknownReason::NONE;
+    SmtUnknownReason unknown_reason = SmtUnknownReason::NONE;
     AdaptivePreclassificationScheduler preclassification_scheduler;
-    while(not pending.empty()) {
-        if(statistics.boxes_processed>=_configuration.box_processing_limit()) {
+    while (not pending.empty()) {
+        if (statistics.boxes_processed >= _configuration.box_processing_limit()) {
             ++statistics.box_budget_exhaustions;
-            unknown_reason=SmtSolverTestSupport::combine_unknown_reasons(
-                unknown_reason,SmtUnknownReason::RESOURCE_EXHAUSTED);
+            unknown_reason = SmtSolverTestSupport::combine_unknown_reasons(
+                unknown_reason, SmtUnknownReason::RESOURCE_EXHAUSTED);
             break;
         }
-        UpperBoxType current=pending.pop();
+        UpperBoxType current = pending.pop();
         ++statistics.boxes_processed;
 
-        Bool const adaptive_eligible=
-            _configuration.adaptive_preclassification_enabled()
-            && this->_preclassification_eligible(current,conjunction);
-        Bool const allow_preclassification=
+        const Bool adaptive_eligible =
+            _configuration.adaptive_preclassification_enabled() && this->_preclassification_eligible(current, conjunction);
+        const Bool allow_preclassification =
             not adaptive_eligible || preclassification_scheduler.request();
 
-        BoxProcessingResult processing=this->_process_box(
-            std::move(current),conjunction,allow_preclassification);
-        this->_accumulate_box_processing_statistics(statistics,processing);
+        BoxProcessingResult processing = this->_process_box(
+            std::move(current), conjunction, allow_preclassification);
+        this->_accumulate_box_processing_statistics(statistics, processing);
 
-        if(adaptive_eligible && allow_preclassification) {
+        if (adaptive_eligible && allow_preclassification) {
             preclassification_scheduler.observe(
                 preclassification_outcome(
                     processing.preclassification_pruned,
                     processing.preclassification_epsilon_satisfied));
         }
-        if(_configuration.adaptive_preclassification_enabled()) {
-            statistics.preclassification_adaptive_skipped_boxes=
+        if (_configuration.adaptive_preclassification_enabled()) {
+            statistics.preclassification_adaptive_skipped_boxes =
                 preclassification_scheduler.skipped();
-            statistics.preclassification_adaptive_suspensions=
+            statistics.preclassification_adaptive_suspensions =
                 preclassification_scheduler.suspensions();
-            statistics.preclassification_adaptive_reactivations=
+            statistics.preclassification_adaptive_reactivations =
                 preclassification_scheduler.reactivations();
         }
 
-        if(processing.status==BoxProcessingStatus::EPSILON_SAT) {
-            return SmtResult::epsilon_sat(*processing.witness,statistics);
+        if (processing.status == BoxProcessingStatus::EPSILON_SAT) {
+            return SmtResult::epsilon_sat(*processing.witness, statistics);
         }
-        if(processing.status==BoxProcessingStatus::SPLIT) {
-            auto children=SmtSolverTestSupport::sequential_children_to_push(
-                _configuration.upper_child_first(),*processing.children);
-            for(auto& child:children) {
+        if (processing.status == BoxProcessingStatus::SPLIT) {
+            auto children = SmtSolverTestSupport::sequential_children_to_push(
+                _configuration.upper_child_first(), *processing.children);
+            for (auto& child: children) {
                 pending.push(std::move(child));
             }
-        } else if(processing.status==BoxProcessingStatus::UNKNOWN) {
-            unknown_reason=SmtSolverTestSupport::combine_unknown_reasons(
-                unknown_reason,SmtUnknownReason::DP_RESOLUTION_EXHAUSTED);
+        } else if (processing.status == BoxProcessingStatus::UNKNOWN) {
+            unknown_reason = SmtSolverTestSupport::combine_unknown_reasons(
+                unknown_reason, SmtUnknownReason::DP_RESOLUTION_EXHAUSTED);
         }
     }
 
-    return unknown_reason==SmtUnknownReason::NONE
-        ? SmtResult::unsat(statistics)
-        : SmtResult::unknown(unknown_reason,statistics);
+    return unknown_reason == SmtUnknownReason::NONE
+             ? SmtResult::unsat(statistics)
+             : SmtResult::unknown(unknown_reason, statistics);
 }
 
-SmtResult SmtSolver::solve(ExactBoxType const& domain,
-                           List<ValidatedConstraint> const& constraints) const
-{
+SmtResult SmtSolver::solve(const ExactBoxType& domain,
+                           const List<ValidatedConstraint>& constraints) const {
     ARIADNE_PRECONDITION(domain.is_bounded());
-    for(SizeType i=0; i!=constraints.size(); ++i) {
-        ARIADNE_PRECONDITION(constraints[i].argument_size()==domain.dimension());
+    for (SizeType i = 0; i != constraints.size(); ++i) {
+        ARIADNE_PRECONDITION(constraints[i].argument_size() == domain.dimension());
     }
 
-    if(domain.is_empty()) {
+    if (domain.is_empty()) {
         return SmtResult::unsat();
     }
-    if(constraints.empty()) {
+    if (constraints.empty()) {
         return SmtResult::epsilon_sat(singleton_box(domain.midpoint()));
     }
     return this->_solve_sequential_conjunction(
-        domain,ConjunctionReference(constraints));
+        domain, ConjunctionReference(constraints));
 }
 
-SmtResult SmtSolver::solve(RealSpace const& space,
-                           ExactBoxType const& domain,
-                           List<SmtTheoryPrimitiveLiteral> const& literals) const
-{
+SmtResult SmtSolver::solve(const RealSpace& space,
+                           const ExactBoxType& domain,
+                           const List<SmtTheoryPrimitiveLiteral>& literals) const {
     ARIADNE_PRECONDITION(domain.is_bounded());
-    ARIADNE_PRECONDITION(space.size()==domain.dimension());
+    ARIADNE_PRECONDITION(space.size() == domain.dimension());
 
-    if(domain.is_empty()) {
+    if (domain.is_empty()) {
         return SmtResult::unsat();
     }
-    if(literals.empty()) {
+    if (literals.empty()) {
         return SmtResult::epsilon_sat(singleton_box(domain.midpoint()));
     }
 
-    auto compile_start=std::chrono::steady_clock::now();
-    CompiledTheoryLiterals compiled=this->_compile_theory_literals(space,literals);
-    double const compile_seconds=elapsed_seconds(compile_start);
-    if(compiled.empty()) {
+    auto compile_start = std::chrono::steady_clock::now();
+    CompiledTheoryLiterals compiled = this->_compile_theory_literals(space, literals);
+    const double compile_seconds = elapsed_seconds(compile_start);
+    if (compiled.empty()) {
         SmtSearchStatistics statistics;
-        statistics.theory_compile_seconds=compile_seconds;
-        return SmtResult::epsilon_sat(singleton_box(domain.midpoint()),statistics);
+        statistics.theory_compile_seconds = compile_seconds;
+        return SmtResult::epsilon_sat(singleton_box(domain.midpoint()), statistics);
     }
-    SmtResult result=this->_solve_sequential_conjunction(
-        domain,ConjunctionReference(compiled));
-    SmtSearchStatistics statistics=result.statistics();
-    statistics.theory_compile_seconds+=compile_seconds;
-    if(result.is_unsat()) {
+    SmtResult result = this->_solve_sequential_conjunction(
+        domain, ConjunctionReference(compiled));
+    SmtSearchStatistics statistics = result.statistics();
+    statistics.theory_compile_seconds += compile_seconds;
+    if (result.is_unsat()) {
         return SmtResult::unsat(statistics);
     }
-    if(result.is_epsilon_sat()) {
-        return SmtResult::epsilon_sat(result.witness(),statistics);
+    if (result.is_epsilon_sat()) {
+        return SmtResult::epsilon_sat(result.witness(), statistics);
     }
-    return SmtResult::unknown(result.unknown_reason(),statistics);
+    return SmtResult::unknown(result.unknown_reason(), statistics);
 }
-
 
 namespace {
 
 std::mutex parallel_execution_observation_mutex;
-Bool parallel_execution_observation_enabled=false;
+Bool parallel_execution_observation_enabled = false;
 std::thread::id parallel_execution_calling_thread;
 std::set<std::thread::id> parallel_execution_threads;
 
@@ -1572,441 +1507,407 @@ struct ParallelSmtSearchState {
 using ParallelSmtWorkload = DynamicWorkload<UpperBoxType>;
 
 Bool parallel_stop_condition_impl(
-    std::atomic<bool> const& found,
-    std::atomic<bool> const& limit_reached)
-{
-    return static_cast<unsigned>(found.load())
-        | static_cast<unsigned>(limit_reached.load());
+    const std::atomic<bool>& found,
+    const std::atomic<bool>& limit_reached) {
+    return static_cast<unsigned>(found.load()) | static_cast<unsigned>(limit_reached.load());
 }
 
 Bool claim_parallel_witness(
     ParallelSmtSearchState& state,
-    UpperBoxType const& witness)
-{
-    bool expected=false;
-    if(not state.found.compare_exchange_strong(expected,true)) {
+    const UpperBoxType& witness) {
+    bool expected = false;
+    if (not state.found.compare_exchange_strong(expected, true)) {
         return false;
     }
     std::lock_guard<std::mutex> lock(state.mutex);
-    state.witness=witness;
+    state.witness = witness;
     return true;
 }
 
 } // namespace
 
 struct SmtParallelTask {
-    SmtSolver const& solver;
-    SmtSolver::ConjunctionReference const& conjunction;
+    const SmtSolver& solver;
+    const SmtSolver::ConjunctionReference& conjunction;
     std::shared_ptr<ParallelSmtSearchState> state;
 
     Void operator()(
         ParallelSmtWorkload::Access& access,
-        UpperBoxType const& box) const
-    {
+        const UpperBoxType& box) const {
         {
             std::lock_guard<std::mutex> lock(state->mutex);
-            if(parallel_stop_condition_impl(state->found,state->limit_reached)) {
+            if (parallel_stop_condition_impl(state->found, state->limit_reached)) {
                 return;
             }
-            if(state->statistics.boxes_processed>=
-                    solver._configuration.box_processing_limit()) {
+            if (state->statistics.boxes_processed >=
+                solver._configuration.box_processing_limit()) {
                 ++state->statistics.box_budget_exhaustions;
-                state->unknown_reason=SmtSolverTestSupport::combine_unknown_reasons(
-                    state->unknown_reason,SmtUnknownReason::RESOURCE_EXHAUSTED);
+                state->unknown_reason = SmtSolverTestSupport::combine_unknown_reasons(
+                    state->unknown_reason, SmtUnknownReason::RESOURCE_EXHAUSTED);
                 state->limit_reached.store(true);
                 return;
             }
             ++state->statistics.boxes_processed;
-        } SmtSolver::BoxProcessingResult processing=solver._process_box(box,conjunction); {
+        }
+        SmtSolver::BoxProcessingResult processing = solver._process_box(box, conjunction);
+        {
             {
                 std::lock_guard<std::mutex> lock(state->mutex);
                 solver._accumulate_box_processing_statistics(
-                    state->statistics,processing);
+                    state->statistics, processing);
             }
 
-            if(processing.status==SmtSolverTestSupport::BoxProcessingStatus::PRUNED) {
+            if (processing.status == SmtSolverTestSupport::BoxProcessingStatus::PRUNED) {
                 return;
             }
-            if(processing.status==SmtSolverTestSupport::BoxProcessingStatus::EPSILON_SAT) {
-                claim_parallel_witness(*state,*processing.witness);
+            if (processing.status == SmtSolverTestSupport::BoxProcessingStatus::EPSILON_SAT) {
+                claim_parallel_witness(*state, *processing.witness);
                 return;
             }
-            if(processing.status==SmtSolverTestSupport::BoxProcessingStatus::SPLIT) {
-                auto children=SmtSolverTestSupport::parallel_children_to_append(
-                    state->found.load(),*processing.children);
-                for(auto const& child:children) {
+            if (processing.status == SmtSolverTestSupport::BoxProcessingStatus::SPLIT) {
+                auto children = SmtSolverTestSupport::parallel_children_to_append(
+                    state->found.load(), *processing.children);
+                for (const auto& child: children) {
                     access.append(child);
                 }
                 return;
             }
             std::lock_guard<std::mutex> lock(state->mutex);
-            state->unknown_reason=SmtSolverTestSupport::combine_unknown_reasons(
-                state->unknown_reason,SmtUnknownReason::DP_RESOLUTION_EXHAUSTED);
+            state->unknown_reason = SmtSolverTestSupport::combine_unknown_reasons(
+                state->unknown_reason, SmtUnknownReason::DP_RESOLUTION_EXHAUSTED);
         }
     }
 };
 
 SmtResult
-SmtSolver::_solve_parallel_conjunction(
-    ExactBoxType const& domain,
-    ConjunctionReference const& conjunction) const
-{
-    auto state=std::make_shared<ParallelSmtSearchState>();
+    SmtSolver::_solve_parallel_conjunction(
+        const ExactBoxType& domain,
+        const ConjunctionReference& conjunction) const {
+    auto state = std::make_shared<ParallelSmtSearchState>();
     ParallelSmtWorkload workload(
         std::bind(&std::this_thread::yield),
-        SmtParallelTask{*this,conjunction,state});
+        SmtParallelTask{*this, conjunction, state});
 
     workload.append(UpperBoxType(domain));
     workload.process();
 
     std::lock_guard<std::mutex> lock(state->mutex);
-    if(state->found.load()) {
-        return SmtResult::epsilon_sat(*state->witness,state->statistics);
+    if (state->found.load()) {
+        return SmtResult::epsilon_sat(*state->witness, state->statistics);
     }
-    if(state->unknown_reason!=SmtUnknownReason::NONE) {
-        return SmtResult::unknown(state->unknown_reason,state->statistics);
+    if (state->unknown_reason != SmtUnknownReason::NONE) {
+        return SmtResult::unknown(state->unknown_reason, state->statistics);
     }
     return SmtResult::unsat(state->statistics);
 }
 
 SmtResult SmtSolver::solve_parallel(
-    ExactBoxType const& domain,
-    List<ValidatedConstraint> const& constraints) const
-{
+    const ExactBoxType& domain,
+    const List<ValidatedConstraint>& constraints) const {
     ARIADNE_PRECONDITION(not _configuration.adaptive_preclassification_enabled());
     ARIADNE_PRECONDITION(domain.is_bounded());
-    for(SizeType i=0; i!=constraints.size(); ++i) {
-        ARIADNE_PRECONDITION(constraints[i].argument_size()==domain.dimension());
+    for (SizeType i = 0; i != constraints.size(); ++i) {
+        ARIADNE_PRECONDITION(constraints[i].argument_size() == domain.dimension());
     }
 
-    if(domain.is_empty()) {
+    if (domain.is_empty()) {
         return SmtResult::unsat();
     }
-    if(constraints.empty()) {
+    if (constraints.empty()) {
         return SmtResult::epsilon_sat(singleton_box(domain.midpoint()));
     }
     return this->_solve_parallel_conjunction(
-        domain,ConjunctionReference(constraints));
+        domain, ConjunctionReference(constraints));
 }
 
 SmtResult SmtSolver::solve_parallel(
-    RealSpace const& space,
-    ExactBoxType const& domain,
-    List<SmtTheoryPrimitiveLiteral> const& literals) const
-{
+    const RealSpace& space,
+    const ExactBoxType& domain,
+    const List<SmtTheoryPrimitiveLiteral>& literals) const {
     ARIADNE_PRECONDITION(not _configuration.adaptive_preclassification_enabled());
     ARIADNE_PRECONDITION(domain.is_bounded());
-    ARIADNE_PRECONDITION(space.size()==domain.dimension());
+    ARIADNE_PRECONDITION(space.size() == domain.dimension());
 
-    if(domain.is_empty()) {
+    if (domain.is_empty()) {
         return SmtResult::unsat();
     }
-    if(literals.empty()) {
+    if (literals.empty()) {
         return SmtResult::epsilon_sat(singleton_box(domain.midpoint()));
     }
 
-    CompiledTheoryLiterals compiled=this->_compile_theory_literals(space,literals);
-    if(compiled.empty()) {
+    CompiledTheoryLiterals compiled = this->_compile_theory_literals(space, literals);
+    if (compiled.empty()) {
         return SmtResult::epsilon_sat(singleton_box(domain.midpoint()));
     }
     return this->_solve_parallel_conjunction(
-        domain,ConjunctionReference(compiled));
+        domain, ConjunctionReference(compiled));
 }
-
 
 namespace SmtSolverTestSupport {
 
-Void begin_parallel_execution_observation()
-{
+Void begin_parallel_execution_observation() {
     std::lock_guard<std::mutex> lock(parallel_execution_observation_mutex);
     parallel_execution_threads.clear();
-    parallel_execution_calling_thread=std::this_thread::get_id();
-    parallel_execution_observation_enabled=true;
+    parallel_execution_calling_thread = std::this_thread::get_id();
+    parallel_execution_observation_enabled = true;
 }
 
-ParallelExecutionObservation end_parallel_execution_observation()
-{
+ParallelExecutionObservation end_parallel_execution_observation() {
     std::lock_guard<std::mutex> lock(parallel_execution_observation_mutex);
     ParallelExecutionObservation result;
-    result.observed_thread_count=parallel_execution_threads.size();
-    result.calling_thread_observed=
-        parallel_execution_threads.find(parallel_execution_calling_thread)
-        != parallel_execution_threads.end();
-    result.worker_thread_count=result.observed_thread_count
-        - static_cast<SizeType>(result.calling_thread_observed);
-    parallel_execution_observation_enabled=false;
+    result.observed_thread_count = parallel_execution_threads.size();
+    result.calling_thread_observed =
+        parallel_execution_threads.find(parallel_execution_calling_thread) != parallel_execution_threads.end();
+    result.worker_thread_count = result.observed_thread_count - static_cast<SizeType>(result.calling_thread_observed);
+    parallel_execution_observation_enabled = false;
     parallel_execution_threads.clear();
     return result;
 }
 
-Void record_parallel_processing_thread()
-{
+Void record_parallel_processing_thread() {
     std::lock_guard<std::mutex> lock(parallel_execution_observation_mutex);
-    if(parallel_execution_observation_enabled) {
+    if (parallel_execution_observation_enabled) {
         parallel_execution_threads.insert(std::this_thread::get_id());
     }
 }
 
-Bool parallel_stop_condition(Bool found, Bool limit_reached)
-{
+Bool parallel_stop_condition(Bool found, Bool limit_reached) {
     std::atomic<bool> atomic_found{static_cast<bool>(found)};
     std::atomic<bool> atomic_limit{static_cast<bool>(limit_reached)};
-    return parallel_stop_condition_impl(atomic_found,atomic_limit);
+    return parallel_stop_condition_impl(atomic_found, atomic_limit);
 }
 
 std::vector<UpperBoxType> parallel_children_to_append(
     Bool found,
-    Pair<UpperBoxType,UpperBoxType> const& children)
-{
-    if(found) {
+    const Pair<UpperBoxType, UpperBoxType>& children) {
+    if (found) {
         return {};
     }
-    return {children.first,children.second};
+    return {children.first, children.second};
 }
 
 std::vector<UpperBoxType> sequential_children_to_push(
     Bool upper_child_first,
-    Pair<UpperBoxType,UpperBoxType> const& children)
-{
-    if(upper_child_first) {
-        return {children.first,children.second};
+    const Pair<UpperBoxType, UpperBoxType>& children) {
+    if (upper_child_first) {
+        return {children.first, children.second};
     }
-    return {children.second,children.first};
+    return {children.second, children.first};
 }
 
-Pair<Bool,Bool> parallel_witness_claim_sequence()
-{
+Pair<Bool, Bool> parallel_witness_claim_sequence() {
     ParallelSmtSearchState state;
-    UpperBoxType witness({UpperIntervalType(ExactIntervalType(0,0))});
-    Bool first=claim_parallel_witness(state,witness);
-    Bool second=claim_parallel_witness(state,witness);
-    return {first,second};
+    UpperBoxType witness({UpperIntervalType(ExactIntervalType(0, 0))});
+    Bool first = claim_parallel_witness(state, witness);
+    Bool second = claim_parallel_witness(state, witness);
+    return {first, second};
 }
 
 Void record_first_minimization_candidate_trail_rank(
     SmtSearchStatistics& statistics,
-    SizeType trail_rank)
-{
-    if(statistics.first_minimization_candidate_trail_rank==0u) {
-        statistics.first_minimization_candidate_trail_rank=trail_rank;
+    SizeType trail_rank) {
+    if (statistics.first_minimization_candidate_trail_rank == 0u) {
+        statistics.first_minimization_candidate_trail_rank = trail_rank;
     }
 }
 
 PreclassificationShadowSummary preclassification_shadow_summary(
-    std::vector<SmtPreclassificationOutcome> const& outcomes,
+    const std::vector<SmtPreclassificationOutcome>& outcomes,
     SizeType initial_window,
     SizeType active_window,
-    SizeType refresh_period)
-{
+    SizeType refresh_period) {
     AdaptivePreclassificationScheduler scheduler(
-        initial_window,active_window,refresh_period);
+        initial_window, active_window, refresh_period);
     PreclassificationShadowSummary summary;
-    for(auto const outcome:outcomes) {
-        if(scheduler.request()) {
+    for (const auto outcome: outcomes) {
+        if (scheduler.request()) {
             ++summary.checks;
-            if(outcome!=SmtPreclassificationOutcome::UNRESOLVED) {
+            if (outcome != SmtPreclassificationOutcome::UNRESOLVED) {
                 ++summary.observed_hits;
             }
             scheduler.observe(outcome);
         } else {
             ++summary.skipped;
-            if(outcome!=SmtPreclassificationOutcome::UNRESOLVED) {
+            if (outcome != SmtPreclassificationOutcome::UNRESOLVED) {
                 ++summary.skipped_hits;
             }
         }
     }
-    summary.suspensions=scheduler.suspensions();
-    summary.reactivations=scheduler.reactivations();
+    summary.suspensions = scheduler.suspensions();
+    summary.reactivations = scheduler.reactivations();
     return summary;
 }
 
-Void accumulate_statistics(SmtSearchStatistics& target, SmtSearchStatistics const& source)
-{
-    target.boxes_processed+=source.boxes_processed;
-    target.boxes_pruned+=source.boxes_pruned;
-    target.boxes_split+=source.boxes_split;
-    target.boxes_unknown+=source.boxes_unknown;
-    target.box_budget_exhaustions+=source.box_budget_exhaustions;
-    target.dp_resolution_exhaustions+=source.dp_resolution_exhaustions;
-    target.non_splittable_uncertified_boxes+=source.non_splittable_uncertified_boxes;
-    target.non_splittable_epsilon_overlap_boxes+=source.non_splittable_epsilon_overlap_boxes;
-    target.hull_reduction_rounds+=source.hull_reduction_rounds;
-    target.hull_effective_reductions+=source.hull_effective_reductions;
-    target.hull_procedure_builds+=source.hull_procedure_builds;
-    target.hull_procedure_build_seconds+=source.hull_procedure_build_seconds;
-    target.hull_contraction_seconds+=source.hull_contraction_seconds;
-    target.hull_direct_rejection_seconds+=source.hull_direct_rejection_seconds;
-    target.hull_temporary_allocation_seconds+=source.hull_temporary_allocation_seconds;
-    target.hull_forward_execution_seconds+=source.hull_forward_execution_seconds;
-    target.hull_backward_propagation_seconds+=source.hull_backward_propagation_seconds;
-    target.interval_newton_attempts+=source.interval_newton_attempts;
-    target.interval_newton_effective_reductions+=
+Void accumulate_statistics(SmtSearchStatistics& target, const SmtSearchStatistics& source) {
+    target.boxes_processed += source.boxes_processed;
+    target.boxes_pruned += source.boxes_pruned;
+    target.boxes_split += source.boxes_split;
+    target.boxes_unknown += source.boxes_unknown;
+    target.box_budget_exhaustions += source.box_budget_exhaustions;
+    target.dp_resolution_exhaustions += source.dp_resolution_exhaustions;
+    target.non_splittable_uncertified_boxes += source.non_splittable_uncertified_boxes;
+    target.non_splittable_epsilon_overlap_boxes += source.non_splittable_epsilon_overlap_boxes;
+    target.hull_reduction_rounds += source.hull_reduction_rounds;
+    target.hull_effective_reductions += source.hull_effective_reductions;
+    target.hull_procedure_builds += source.hull_procedure_builds;
+    target.hull_procedure_build_seconds += source.hull_procedure_build_seconds;
+    target.hull_contraction_seconds += source.hull_contraction_seconds;
+    target.hull_direct_rejection_seconds += source.hull_direct_rejection_seconds;
+    target.hull_temporary_allocation_seconds += source.hull_temporary_allocation_seconds;
+    target.hull_forward_execution_seconds += source.hull_forward_execution_seconds;
+    target.hull_backward_propagation_seconds += source.hull_backward_propagation_seconds;
+    target.interval_newton_attempts += source.interval_newton_attempts;
+    target.interval_newton_effective_reductions +=
         source.interval_newton_effective_reductions;
-    target.interval_newton_infeasible+=source.interval_newton_infeasible;
-    target.interval_newton_singular+=source.interval_newton_singular;
-    target.interval_newton_seconds+=source.interval_newton_seconds;
-    target.shaving_reduction_rounds+=source.shaving_reduction_rounds;
-    target.shaving_effective_reductions+=source.shaving_effective_reductions;
-    target.shaving_coordinate_attempts+=source.shaving_coordinate_attempts;
-    target.shaving_coordinate_effective+=source.shaving_coordinate_effective;
-    target.shaving_dependency_skipped+=source.shaving_dependency_skipped;
-    target.shaving_adaptive_skipped+=source.shaving_adaptive_skipped;
-    target.shaving_refresh_rounds+=source.shaving_refresh_rounds;
-    target.shaving_active_rounds+=source.shaving_active_rounds;
-    target.shaving_function_evaluations+=source.shaving_function_evaluations;
-    target.shaving_seconds+=source.shaving_seconds;
-    target.monotone_reduction_rounds+=source.monotone_reduction_rounds;
-    target.monotone_effective_reductions+=source.monotone_effective_reductions;
-    target.sensitivity_guided_splits+=source.sensitivity_guided_splits;
-    target.sensitivity_overrides_geometric_splits+=source.sensitivity_overrides_geometric_splits;
-    target.sensitivity_derivatives_built+=source.sensitivity_derivatives_built;
-    target.sensitivity_derivative_evaluations+=source.sensitivity_derivative_evaluations;
-    target.sensitivity_derivative_build_seconds+=source.sensitivity_derivative_build_seconds;
-    target.sensitivity_derivative_evaluation_seconds+=source.sensitivity_derivative_evaluation_seconds;
-    target.interval_lookahead_guided_splits+=source.interval_lookahead_guided_splits;
-    target.interval_lookahead_overrides_geometric_splits+=
+    target.interval_newton_infeasible += source.interval_newton_infeasible;
+    target.interval_newton_singular += source.interval_newton_singular;
+    target.interval_newton_seconds += source.interval_newton_seconds;
+    target.shaving_reduction_rounds += source.shaving_reduction_rounds;
+    target.shaving_effective_reductions += source.shaving_effective_reductions;
+    target.shaving_coordinate_attempts += source.shaving_coordinate_attempts;
+    target.shaving_coordinate_effective += source.shaving_coordinate_effective;
+    target.shaving_dependency_skipped += source.shaving_dependency_skipped;
+    target.shaving_adaptive_skipped += source.shaving_adaptive_skipped;
+    target.shaving_refresh_rounds += source.shaving_refresh_rounds;
+    target.shaving_active_rounds += source.shaving_active_rounds;
+    target.shaving_function_evaluations += source.shaving_function_evaluations;
+    target.shaving_seconds += source.shaving_seconds;
+    target.monotone_reduction_rounds += source.monotone_reduction_rounds;
+    target.monotone_effective_reductions += source.monotone_effective_reductions;
+    target.sensitivity_guided_splits += source.sensitivity_guided_splits;
+    target.sensitivity_overrides_geometric_splits += source.sensitivity_overrides_geometric_splits;
+    target.sensitivity_derivatives_built += source.sensitivity_derivatives_built;
+    target.sensitivity_derivative_evaluations += source.sensitivity_derivative_evaluations;
+    target.sensitivity_derivative_build_seconds += source.sensitivity_derivative_build_seconds;
+    target.sensitivity_derivative_evaluation_seconds += source.sensitivity_derivative_evaluation_seconds;
+    target.interval_lookahead_guided_splits += source.interval_lookahead_guided_splits;
+    target.interval_lookahead_overrides_geometric_splits +=
         source.interval_lookahead_overrides_geometric_splits;
-    target.interval_lookahead_function_evaluations+=
+    target.interval_lookahead_function_evaluations +=
         source.interval_lookahead_function_evaluations;
-    target.interval_lookahead_evaluation_seconds+=
+    target.interval_lookahead_evaluation_seconds +=
         source.interval_lookahead_evaluation_seconds;
-    target.epsilon_box_certifications+=source.epsilon_box_certifications;
-    target.fused_direct_classification_boxes+=
+    target.epsilon_box_certifications += source.epsilon_box_certifications;
+    target.fused_direct_classification_boxes +=
         source.fused_direct_classification_boxes;
-    target.fused_direct_literal_evaluations+=
+    target.fused_direct_literal_evaluations +=
         source.fused_direct_literal_evaluations;
-    target.preclassification_boxes+=source.preclassification_boxes;
-    target.preclassification_pruned_boxes+=
+    target.preclassification_boxes += source.preclassification_boxes;
+    target.preclassification_pruned_boxes +=
         source.preclassification_pruned_boxes;
-    target.preclassification_epsilon_boxes+=
+    target.preclassification_epsilon_boxes +=
         source.preclassification_epsilon_boxes;
-    target.preclassification_literal_evaluations+=
+    target.preclassification_literal_evaluations +=
         source.preclassification_literal_evaluations;
     target.preclassification_outcomes.insert(
         target.preclassification_outcomes.end(),
         source.preclassification_outcomes.begin(),
         source.preclassification_outcomes.end());
-    target.preclassification_adaptive_skipped_boxes+=
+    target.preclassification_adaptive_skipped_boxes +=
         source.preclassification_adaptive_skipped_boxes;
-    target.preclassification_adaptive_suspensions+=
+    target.preclassification_adaptive_suspensions +=
         source.preclassification_adaptive_suspensions;
-    target.preclassification_adaptive_reactivations+=
+    target.preclassification_adaptive_reactivations +=
         source.preclassification_adaptive_reactivations;
-    target.preclassification_seconds+=source.preclassification_seconds;
-    target.candidate_witness_searches+=source.candidate_witness_searches;
-    target.candidate_witness_successes+=source.candidate_witness_successes;
-    target.boolean_decisions+=source.boolean_decisions;
-    target.boolean_propagations+=source.boolean_propagations;
-    target.boolean_reasoned_propagations+=source.boolean_reasoned_propagations;
-    target.boolean_conflicts+=source.boolean_conflicts;
-    target.boolean_backtracks+=source.boolean_backtracks;
-    target.max_decision_level=std::max(target.max_decision_level,source.max_decision_level);
-    target.boolean_conflicts_analyzed+=source.boolean_conflicts_analyzed;
-    target.learned_clause_literals+=source.learned_clause_literals;
-    if(source.boolean_conflicts_analyzed!=0u) {
-        target.last_learned_clause_literals=source.last_learned_clause_literals;
-        target.last_learned_current_level_literals=source.last_learned_current_level_literals;
-        target.last_backjump_level=source.last_backjump_level;
+    target.preclassification_seconds += source.preclassification_seconds;
+    target.candidate_witness_searches += source.candidate_witness_searches;
+    target.candidate_witness_successes += source.candidate_witness_successes;
+    target.boolean_decisions += source.boolean_decisions;
+    target.boolean_propagations += source.boolean_propagations;
+    target.boolean_reasoned_propagations += source.boolean_reasoned_propagations;
+    target.boolean_conflicts += source.boolean_conflicts;
+    target.boolean_backtracks += source.boolean_backtracks;
+    target.max_decision_level = std::max(target.max_decision_level, source.max_decision_level);
+    target.boolean_conflicts_analyzed += source.boolean_conflicts_analyzed;
+    target.learned_clause_literals += source.learned_clause_literals;
+    if (source.boolean_conflicts_analyzed != 0u) {
+        target.last_learned_clause_literals = source.last_learned_clause_literals;
+        target.last_learned_current_level_literals = source.last_learned_current_level_literals;
+        target.last_backjump_level = source.last_backjump_level;
     }
-    target.learned_clauses+=source.learned_clauses;
-    target.learned_clause_propagations+=source.learned_clause_propagations;
-    target.nonchronological_backjumps+=source.nonchronological_backjumps;
-    target.theory_checks+=source.theory_checks;
-    target.theory_conflicts+=source.theory_conflicts;
-    target.theory_learned_clauses+=source.theory_learned_clauses;
-    target.theory_learned_clause_literals+=source.theory_learned_clause_literals;
-    target.theory_learned_clause_propagations+=source.theory_learned_clause_propagations;
-    target.theory_minimization_checks+=source.theory_minimization_checks;
-    target.theory_nogood_raw_literals+=source.theory_nogood_raw_literals;
-    target.theory_nogood_minimized_literals+=source.theory_nogood_minimized_literals;
-    target.theory_nogood_literals_removed+=source.theory_nogood_literals_removed;
-    target.theory_minimization_budget_exhaustions+=
+    target.learned_clauses += source.learned_clauses;
+    target.learned_clause_propagations += source.learned_clause_propagations;
+    target.nonchronological_backjumps += source.nonchronological_backjumps;
+    target.theory_checks += source.theory_checks;
+    target.theory_conflicts += source.theory_conflicts;
+    target.theory_learned_clauses += source.theory_learned_clauses;
+    target.theory_learned_clause_literals += source.theory_learned_clause_literals;
+    target.theory_learned_clause_propagations += source.theory_learned_clause_propagations;
+    target.theory_minimization_checks += source.theory_minimization_checks;
+    target.theory_nogood_raw_literals += source.theory_nogood_raw_literals;
+    target.theory_nogood_minimized_literals += source.theory_nogood_minimized_literals;
+    target.theory_nogood_literals_removed += source.theory_nogood_literals_removed;
+    target.theory_minimization_budget_exhaustions +=
         source.theory_minimization_budget_exhaustions;
-    if((target.first_minimization_candidate_trail_rank==0u)
-       & (source.first_minimization_candidate_trail_rank!=0u)) {
-        target.first_minimization_candidate_trail_rank=
+    if ((target.first_minimization_candidate_trail_rank == 0u) & (source.first_minimization_candidate_trail_rank != 0u)) {
+        target.first_minimization_candidate_trail_rank =
             source.first_minimization_candidate_trail_rank;
     }
-    target.learned_clause_activity_bumps+=source.learned_clause_activity_bumps;
-    target.learned_clause_pruning_runs+=source.learned_clause_pruning_runs;
-    target.learned_clauses_pruned+=source.learned_clauses_pruned;
-    target.peak_active_non_theory_learned_clauses=std::max(
+    target.learned_clause_activity_bumps += source.learned_clause_activity_bumps;
+    target.learned_clause_pruning_runs += source.learned_clause_pruning_runs;
+    target.learned_clauses_pruned += source.learned_clauses_pruned;
+    target.peak_active_non_theory_learned_clauses = std::max(
         target.peak_active_non_theory_learned_clauses,
         source.peak_active_non_theory_learned_clauses);
 }
 
-
 std::vector<SizeType> learned_clause_pruning_candidates(
-    std::vector<LearnedClausePruningEntry> const& entries)
-{
+    const std::vector<LearnedClausePruningEntry>& entries) {
     std::vector<SizeType> candidates;
-    for(SizeType i=0u; i!=entries.size(); ++i) {
-        auto const& entry=entries[i];
-        Bool const excluded=
-            (not entry.active)
-            | entry.theory
-            | entry.recent
-            | entry.short_clause
-            | entry.useful
-            | entry.protected_clause
-            | entry.locked;
-        if(excluded) {
+    for (SizeType i = 0u; i != entries.size(); ++i) {
+        const auto& entry = entries[i];
+        const Bool excluded =
+            (not entry.active) | entry.theory | entry.recent | entry.short_clause | entry.useful | entry.protected_clause | entry.locked;
+        if (excluded) {
             continue;
         }
         candidates.push_back(i);
     }
-    std::stable_sort(candidates.begin(),candidates.end(),
-        [&entries](SizeType lhs, SizeType rhs) {
-            if(entries[lhs].activity!=entries[rhs].activity) {
-                return entries[lhs].activity<entries[rhs].activity;
-            }
-            return entries[lhs].size>entries[rhs].size;
-        });
+    std::stable_sort(candidates.begin(), candidates.end(),
+                     [&entries](SizeType lhs, SizeType rhs) {
+                         if (entries[lhs].activity != entries[rhs].activity) {
+                             return entries[lhs].activity < entries[rhs].activity;
+                         }
+                         return entries[lhs].size > entries[rhs].size;
+                     });
     return candidates;
 }
 
 SizeType apply_learned_clause_pruning(
-    std::vector<SizeType> const&,
+    const std::vector<SizeType>&,
     SizeType,
-    SizeType)
-{
+    SizeType) {
     return 0u;
 }
 
-
 CandidateWitnessOutcome candidate_witness_outcome(
     Bool attempted,
-    std::optional<UpperBoxType> const& certified_witness)
-{
-    if(not attempted) {
+    const std::optional<UpperBoxType>& certified_witness) {
+    if (not attempted) {
         return {};
     }
-    if(certified_witness.has_value()) {
-        return {true,true,certified_witness};
+    if (certified_witness.has_value()) {
+        return {true, true, certified_witness};
     }
-    return {true,false,std::nullopt};
+    return {true, false, std::nullopt};
 }
 
-SizeType epsilon_witness_candidate_count(UpperBoxType const& domain)
-{
+SizeType epsilon_witness_candidate_count(const UpperBoxType& domain) {
     return epsilon_witness_candidates(domain).size();
 }
 
 SensitivitySplitSelection sensitivity_split_selection(
-    UpperBoxType const& domain,
-    std::vector<ValidatedScalarMultivariateFunction> const& functions)
-{
-    auto selection=sensitivity_split_coordinate(domain,functions);
+    const UpperBoxType& domain,
+    const std::vector<ValidatedScalarMultivariateFunction>& functions) {
+    auto selection = sensitivity_split_coordinate(domain, functions);
     return {
         selection.first,
         selection.second.first,
-        selection.second.second
-    };
+        selection.second.second};
 }
 
-Void validate_differentiable_expression_kind(OperatorKind kind)
-{
-    switch(kind) {
+Void validate_differentiable_expression_kind(OperatorKind kind) {
+    switch (kind) {
         case OperatorKind::NULLARY:
         case OperatorKind::VARIABLE:
         case OperatorKind::UNARY:
@@ -2018,112 +1919,99 @@ Void validate_differentiable_expression_kind(OperatorKind kind)
     }
 }
 
-Bool expression_is_differentiable(RealExpression const& expression)
-{
-    OperatorCode code=expression.code();
-    if(code==OperatorCode::ABS
-       || code==OperatorCode::MAX
-       || code==OperatorCode::MIN) {
+Bool expression_is_differentiable(const RealExpression& expression) {
+    OperatorCode code = expression.code();
+    if (code == OperatorCode::ABS || code == OperatorCode::MAX || code == OperatorCode::MIN) {
         return false;
     }
 
-    OperatorKind kind=expression.kind();
+    OperatorKind kind = expression.kind();
     validate_differentiable_expression_kind(kind);
-    if(kind==OperatorKind::NULLARY || kind==OperatorKind::VARIABLE) {
+    if (kind == OperatorKind::NULLARY || kind == OperatorKind::VARIABLE) {
         return true;
     }
-    if(kind==OperatorKind::UNARY || kind==OperatorKind::GRADED) {
+    if (kind == OperatorKind::UNARY || kind == OperatorKind::GRADED) {
         return expression_is_differentiable(expression.arg());
     }
-    return expression_is_differentiable(expression.arg1())
-        && expression_is_differentiable(expression.arg2());
+    return expression_is_differentiable(expression.arg1()) && expression_is_differentiable(expression.arg2());
 }
 
 std::optional<ValidatedScalarMultivariateFunction> optional_derivative(
-    RealExpression const& expression,
-    ValidatedScalarMultivariateFunction const& function,
-    SizeType variable)
-{
-    if(not expression_is_differentiable(expression)) {
+    const RealExpression& expression,
+    const ValidatedScalarMultivariateFunction& function,
+    SizeType variable) {
+    if (not expression_is_differentiable(expression)) {
         return std::nullopt;
     }
     return function.derivative(variable);
 }
 
 SizeType compiled_theory_derivative_count(
-    SmtSolver const& solver,
-    RealSpace const& space,
-    List<SmtTheoryPrimitiveLiteral> const& literals)
-{
-    auto compiled=solver._compile_theory_literals(space,literals);
-    SizeType count=0u;
-    for(auto const& literal:compiled) {
-        count+=literal.derivatives.size();
+    const SmtSolver& solver,
+    const RealSpace& space,
+    const List<SmtTheoryPrimitiveLiteral>& literals) {
+    auto compiled = solver._compile_theory_literals(space, literals);
+    SizeType count = 0u;
+    for (const auto& literal: compiled) {
+        count += literal.derivatives.size();
     }
     return count;
 }
 
 SizeType interval_newton_subsystem_candidate_count(
-    SmtSolver const& solver,
-    RealSpace const& space,
-    List<SmtTheoryPrimitiveLiteral> const& literals)
-{
-    auto compiled=solver._compile_theory_literals(space,literals);
-    return interval_newton_subsystem_candidates(compiled,space.dimension()).size();
+    const SmtSolver& solver,
+    const RealSpace& space,
+    const List<SmtTheoryPrimitiveLiteral>& literals) {
+    auto compiled = solver._compile_theory_literals(space, literals);
+    return interval_newton_subsystem_candidates(compiled, space.dimension()).size();
 }
 
-SearchOutcome SearchOutcome::exhausted()
-{
+SearchOutcome SearchOutcome::exhausted() {
     return {};
 }
 
-SearchOutcome SearchOutcome::found(UpperBoxType const& witness)
-{
+SearchOutcome SearchOutcome::found(const UpperBoxType& witness) {
     SearchOutcome result;
-    result.witness=witness;
+    result.witness = witness;
     return result;
 }
 
-SearchOutcome SearchOutcome::backjump(SizeType level)
-{
+SearchOutcome SearchOutcome::backjump(SizeType level) {
     SearchOutcome result;
-    result.backjump_level=level;
+    result.backjump_level = level;
     return result;
 }
 
 SmtUnknownReason combine_unknown_reasons(
     SmtUnknownReason first,
-    SmtUnknownReason second)
-{
-    if(first==SmtUnknownReason::NONE) {
+    SmtUnknownReason second) {
+    if (first == SmtUnknownReason::NONE) {
         return second;
     }
-    if(second==SmtUnknownReason::NONE) {
+    if (second == SmtUnknownReason::NONE) {
         return first;
     }
-    if(first==second) {
+    if (first == second) {
         return first;
     }
     return SmtUnknownReason::MIXED;
 }
 
 SmtResult finalize_search_outcome(
-    SearchOutcome const& outcome,
+    const SearchOutcome& outcome,
     SmtUnknownReason theory_unknown_reason,
-    SmtSearchStatistics const& statistics)
-{
-    if(outcome.witness.has_value()) {
-        return SmtResult::epsilon_sat(*outcome.witness,statistics);
+    const SmtSearchStatistics& statistics) {
+    if (outcome.witness.has_value()) {
+        return SmtResult::epsilon_sat(*outcome.witness, statistics);
     }
-    if(theory_unknown_reason!=SmtUnknownReason::NONE) {
-        return SmtResult::unknown(theory_unknown_reason,statistics);
+    if (theory_unknown_reason != SmtUnknownReason::NONE) {
+        return SmtResult::unknown(theory_unknown_reason, statistics);
     }
     return SmtResult::unsat(statistics);
 }
 
-Void validate_primitive_relation(SmtTheoryPrimitiveRelation relation)
-{
-    switch(relation) {
+Void validate_primitive_relation(SmtTheoryPrimitiveRelation relation) {
+    switch (relation) {
         case SmtTheoryPrimitiveRelation::EQ_ZERO:
         case SmtTheoryPrimitiveRelation::GEQ_ZERO:
         case SmtTheoryPrimitiveRelation::GT_ZERO:
@@ -2134,116 +2022,135 @@ Void validate_primitive_relation(SmtTheoryPrimitiveRelation relation)
 }
 
 std::vector<BooleanLiteral> resolve_clause_on_variable(
-    std::vector<BooleanLiteral> const& lhs,
-    std::vector<BooleanLiteral> const& rhs,
-    SizeType variable)
-{
+    const std::vector<BooleanLiteral>& lhs,
+    const std::vector<BooleanLiteral>& rhs,
+    SizeType variable) {
     std::vector<BooleanLiteral> result;
-    result.reserve(lhs.size()+rhs.size());
+    result.reserve(lhs.size() + rhs.size());
 
-    auto append_unique=[&](BooleanLiteral literal) {
-        SizeType literal_variable=literal.variable();
-        if(literal_variable==variable) {
+    auto append_unique = [&](BooleanLiteral literal) {
+        SizeType literal_variable = literal.variable();
+        if (literal_variable == variable) {
             return;
         }
-        for(BooleanLiteral existing:result) {
-            if(existing==literal) {
+        for (BooleanLiteral existing: result) {
+            if (existing == literal) {
                 return;
             }
         }
         result.push_back(literal);
     };
 
-    for(BooleanLiteral literal:lhs) { append_unique(literal); }
-    for(BooleanLiteral literal:rhs) { append_unique(literal); }
+    for (BooleanLiteral literal: lhs) {
+        append_unique(literal);
+    }
+    for (BooleanLiteral literal: rhs) {
+        append_unique(literal);
+    }
     return result;
 }
 
 Void order_theory_nogood(
     std::vector<BooleanLiteral>& clause,
-    std::vector<SizeType> const& decision_levels,
-    std::vector<SizeType> const& trail_rank)
-{
-    std::stable_sort(clause.begin(),clause.end(),
-        [&decision_levels,&trail_rank](BooleanLiteral lhs, BooleanLiteral rhs) {
-            SizeType lhs_variable=lhs.variable();
-            SizeType rhs_variable=rhs.variable();
-            SizeType lhs_level=decision_levels[lhs_variable];
-            SizeType rhs_level=decision_levels[rhs_variable];
-            if(lhs_level!=rhs_level) {
-                return lhs_level>rhs_level;
-            }
-            return trail_rank[lhs_variable]>trail_rank[rhs_variable];
-        });
+    const std::vector<SizeType>& decision_levels,
+    const std::vector<SizeType>& trail_rank) {
+    std::stable_sort(clause.begin(), clause.end(),
+                     [&decision_levels, &trail_rank](BooleanLiteral lhs, BooleanLiteral rhs) {
+                         SizeType lhs_variable = lhs.variable();
+                         SizeType rhs_variable = rhs.variable();
+                         SizeType lhs_level = decision_levels[lhs_variable];
+                         SizeType rhs_level = decision_levels[rhs_variable];
+                         if (lhs_level != rhs_level) {
+                             return lhs_level > rhs_level;
+                         }
+                         return trail_rank[lhs_variable] > trail_rank[rhs_variable];
+                     });
 }
 
-Bool clause_is_learned(SizeType index, SizeType original_clause_count)
-{
-    return index>=original_clause_count;
+Bool clause_is_learned(SizeType index, SizeType original_clause_count) {
+    return index >= original_clause_count;
 }
 
 Bool learned_clause_is_theory(
     SizeType index,
     SizeType original_clause_count,
-    std::vector<Bool> const& theory_flags)
-{
-    if(not clause_is_learned(index,original_clause_count)) {
+    const std::vector<Bool>& theory_flags) {
+    if (not clause_is_learned(index, original_clause_count)) {
         return false;
     }
-    return theory_flags[index-original_clause_count];
+    return theory_flags[index - original_clause_count];
 }
 
 Bool assignment_locks_clause(
     int8_t assignment_value,
-    std::optional<SizeType> const& reason_clause,
-    SizeType clause_index)
-{
-    Bool const assigned=assignment_value>=0;
-    Bool const matching_reason=
-        reason_clause==std::optional<SizeType>(clause_index);
-    return static_cast<unsigned>(assigned)
-        & static_cast<unsigned>(matching_reason);
+    const std::optional<SizeType>& reason_clause,
+    SizeType clause_index) {
+    const Bool assigned = assignment_value >= 0;
+    const Bool matching_reason =
+        reason_clause == std::optional<SizeType>(clause_index);
+    return static_cast<unsigned>(assigned) & static_cast<unsigned>(matching_reason);
 }
 
 TheoryAtomTruth classify_theory_relation(
     SmtTheoryRelation relation,
-    UpperIntervalType const& image)
-{
-    Bool const definitely_negative=definitely(image.upper_bound()<0);
-    Bool const definitely_positive=definitely(image.lower_bound()>0);
-    Bool const definitely_nonnegative=definitely(image.lower_bound()>=0);
-    Bool const definitely_nonpositive=definitely(image.upper_bound()<=0);
-    Bool const definitely_zero=
-        static_cast<unsigned>(definitely_nonnegative)
-        & static_cast<unsigned>(definitely_nonpositive);
-    Bool const definitely_nonzero=
-        static_cast<unsigned>(definitely_negative)
-        | static_cast<unsigned>(definitely_positive);
+    const UpperIntervalType& image) {
+    const Bool definitely_negative = definitely(image.upper_bound() < 0);
+    const Bool definitely_positive = definitely(image.lower_bound() > 0);
+    const Bool definitely_nonnegative = definitely(image.lower_bound() >= 0);
+    const Bool definitely_nonpositive = definitely(image.upper_bound() <= 0);
+    const Bool definitely_zero =
+        static_cast<unsigned>(definitely_nonnegative) & static_cast<unsigned>(definitely_nonpositive);
+    const Bool definitely_nonzero =
+        static_cast<unsigned>(definitely_negative) | static_cast<unsigned>(definitely_positive);
 
-    switch(relation) {
+    switch (relation) {
         case SmtTheoryRelation::EQ:
-            if(definitely_zero) { return TheoryAtomTruth::TRUE_VALUE; }
-            if(definitely_nonzero) { return TheoryAtomTruth::FALSE_VALUE; }
+            if (definitely_zero) {
+                return TheoryAtomTruth::TRUE_VALUE;
+            }
+            if (definitely_nonzero) {
+                return TheoryAtomTruth::FALSE_VALUE;
+            }
             return TheoryAtomTruth::UNKNOWN;
         case SmtTheoryRelation::NEQ:
-            if(definitely_nonzero) { return TheoryAtomTruth::TRUE_VALUE; }
-            if(definitely_zero) { return TheoryAtomTruth::FALSE_VALUE; }
+            if (definitely_nonzero) {
+                return TheoryAtomTruth::TRUE_VALUE;
+            }
+            if (definitely_zero) {
+                return TheoryAtomTruth::FALSE_VALUE;
+            }
             return TheoryAtomTruth::UNKNOWN;
         case SmtTheoryRelation::GEQ:
-            if(definitely_nonnegative) { return TheoryAtomTruth::TRUE_VALUE; }
-            if(definitely_negative) { return TheoryAtomTruth::FALSE_VALUE; }
+            if (definitely_nonnegative) {
+                return TheoryAtomTruth::TRUE_VALUE;
+            }
+            if (definitely_negative) {
+                return TheoryAtomTruth::FALSE_VALUE;
+            }
             return TheoryAtomTruth::UNKNOWN;
         case SmtTheoryRelation::LEQ:
-            if(definitely_nonpositive) { return TheoryAtomTruth::TRUE_VALUE; }
-            if(definitely_positive) { return TheoryAtomTruth::FALSE_VALUE; }
+            if (definitely_nonpositive) {
+                return TheoryAtomTruth::TRUE_VALUE;
+            }
+            if (definitely_positive) {
+                return TheoryAtomTruth::FALSE_VALUE;
+            }
             return TheoryAtomTruth::UNKNOWN;
         case SmtTheoryRelation::GT:
-            if(definitely_positive) { return TheoryAtomTruth::TRUE_VALUE; }
-            if(definitely_nonpositive) { return TheoryAtomTruth::FALSE_VALUE; }
+            if (definitely_positive) {
+                return TheoryAtomTruth::TRUE_VALUE;
+            }
+            if (definitely_nonpositive) {
+                return TheoryAtomTruth::FALSE_VALUE;
+            }
             return TheoryAtomTruth::UNKNOWN;
         case SmtTheoryRelation::LT:
-            if(definitely_negative) { return TheoryAtomTruth::TRUE_VALUE; }
-            if(definitely_nonnegative) { return TheoryAtomTruth::FALSE_VALUE; }
+            if (definitely_negative) {
+                return TheoryAtomTruth::TRUE_VALUE;
+            }
+            if (definitely_nonnegative) {
+                return TheoryAtomTruth::FALSE_VALUE;
+            }
             return TheoryAtomTruth::UNKNOWN;
         default:
             throw std::runtime_error("Unknown SMT theory relation");
@@ -2251,61 +2158,57 @@ TheoryAtomTruth classify_theory_relation(
 }
 
 TheoryAtomTruth classify_theory_atom(
-    RealSpace const& space,
-    ExactBoxType const& domain,
-    ContinuousPredicate const& atom)
-{
-    SmtTheoryLiteral literal=make_smt_theory_literal(atom);
-    RealExpression difference=simplify(literal.lhs()-literal.rhs());
-    ValidatedScalarMultivariateFunction function(make_function(space,difference));
-    UpperIntervalType image=apply(function,UpperBoxType(domain));
-    return classify_theory_relation(literal.relation(),image);
-
+    const RealSpace& space,
+    const ExactBoxType& domain,
+    const ContinuousPredicate& atom) {
+    SmtTheoryLiteral literal = make_smt_theory_literal(atom);
+    RealExpression difference = simplify(literal.lhs() - literal.rhs());
+    ValidatedScalarMultivariateFunction function(make_function(space, difference));
+    UpperIntervalType image = apply(function, UpperBoxType(domain));
+    return classify_theory_relation(literal.relation(), image);
 }
 
 Bool epsilon_primitive_image_infeasible(
     SmtTheoryPrimitiveRelation relation,
-    UpperIntervalType const& image,
-    FloatDP const& epsilon)
-{
-    switch(relation) {
+    const UpperIntervalType& image,
+    const FloatDP& epsilon) {
+    switch (relation) {
         case SmtTheoryPrimitiveRelation::EQ_ZERO:
             return definitely(disjoint(
-                image,ExactIntervalType(-epsilon,+epsilon)));
+                image, ExactIntervalType(-epsilon, +epsilon)));
         case SmtTheoryPrimitiveRelation::GEQ_ZERO:
-            return definitely(image.upper_bound()<-epsilon);
+            return definitely(image.upper_bound() < -epsilon);
         case SmtTheoryPrimitiveRelation::GT_ZERO:
-            return definitely(image.upper_bound()<=-epsilon);
+            return definitely(image.upper_bound() <= -epsilon);
         default:
             throw std::runtime_error("Unknown SMT primitive theory relation");
     }
 }
 
 Bool epsilon_theory_literal_infeasible(
-    SmtSolver const& solver,
-    RealSpace const& space,
-    ExactBoxType const& domain,
-    SmtTheoryLiteral const& literal)
-{
-    auto alternatives=normalize_smt_theory_literal(literal);
-    FloatDP epsilon(solver.configuration().epsilon(),dp);
+    const SmtSolver& solver,
+    const RealSpace& space,
+    const ExactBoxType& domain,
+    const SmtTheoryLiteral& literal) {
+    auto alternatives = normalize_smt_theory_literal(literal);
+    FloatDP epsilon(solver.configuration().epsilon(), dp);
 
-    for(auto const& alternative:alternatives) {
-        Bool alternative_infeasible=false;
-        for(auto const& primitive:alternative) {
-            RealExpression expression=simplify(primitive.expression());
-            ValidatedScalarMultivariateFunction function(make_function(space,expression));
-            UpperIntervalType image=apply(function,UpperBoxType(domain));
+    for (const auto& alternative: alternatives) {
+        Bool alternative_infeasible = false;
+        for (const auto& primitive: alternative) {
+            RealExpression expression = simplify(primitive.expression());
+            ValidatedScalarMultivariateFunction function(make_function(space, expression));
+            UpperIntervalType image = apply(function, UpperBoxType(domain));
 
-            Bool primitive_infeasible=epsilon_primitive_image_infeasible(
-                primitive.relation(),image,epsilon);
+            Bool primitive_infeasible = epsilon_primitive_image_infeasible(
+                primitive.relation(), image, epsilon);
 
-            if(primitive_infeasible) {
-                alternative_infeasible=true;
+            if (primitive_infeasible) {
+                alternative_infeasible = true;
                 break;
             }
         }
-        if(not alternative_infeasible) {
+        if (not alternative_infeasible) {
             return false;
         }
     }
@@ -2313,103 +2216,95 @@ Bool epsilon_theory_literal_infeasible(
 }
 
 TheoryAtomImplication domain_theory_implication(
-    SmtSolver const& solver,
-    RealSpace const& space,
-    ExactBoxType const& domain,
-    ContinuousPredicate const& atom)
-{
-    SmtTheoryLiteral literal=make_smt_theory_literal(atom);
-    Bool const force_false=epsilon_theory_literal_infeasible(
-        solver,space,domain,literal);
-    Bool const force_true=epsilon_theory_literal_infeasible(
-        solver,space,domain,literal.negated());
-    return {force_true,force_false};
+    const SmtSolver& solver,
+    const RealSpace& space,
+    const ExactBoxType& domain,
+    const ContinuousPredicate& atom) {
+    SmtTheoryLiteral literal = make_smt_theory_literal(atom);
+    const Bool force_false = epsilon_theory_literal_infeasible(
+        solver, space, domain, literal);
+    const Bool force_true = epsilon_theory_literal_infeasible(
+        solver, space, domain, literal.negated());
+    return {force_true, force_false};
 }
 
-TheoryResultInterpretation interpret_theory_result(SmtResult const& result)
-{
-    if(result.is_epsilon_sat()) {
-        return {true,SmtUnknownReason::NONE,result.witness()};
+TheoryResultInterpretation interpret_theory_result(const SmtResult& result) {
+    if (result.is_epsilon_sat()) {
+        return {true, SmtUnknownReason::NONE, result.witness()};
     }
-    if(result.is_unknown()) {
-        return {true,result.unknown_reason(),std::nullopt};
+    if (result.is_unknown()) {
+        return {true, result.unknown_reason(), std::nullopt};
     }
-    return {false,SmtUnknownReason::NONE,std::nullopt};
+    return {false, SmtUnknownReason::NONE, std::nullopt};
 }
 
 ExactIntervalType original_bounds(
-    SmtSolver const& solver,
-    SmtTheoryPrimitiveRelation relation)
-{
+    const SmtSolver& solver,
+    SmtTheoryPrimitiveRelation relation) {
     return solver._original_bounds(relation);
 }
 
 Bool epsilon_satisfied(
-    SmtSolver const& solver,
-    UpperBoxType const& domain,
-    List<ValidatedConstraint> const& constraints)
-{
-    return solver._epsilon_satisfied(domain,constraints);
+    const SmtSolver& solver,
+    const UpperBoxType& domain,
+    const List<ValidatedConstraint>& constraints) {
+    return solver._epsilon_satisfied(domain, constraints);
 }
 
 Bool epsilon_satisfied(
-    SmtSolver const& solver,
-    RealSpace const& space,
-    UpperBoxType const& domain,
-    List<SmtTheoryPrimitiveLiteral> const& literals)
-{
-    auto compiled=solver._compile_theory_literals(space,literals);
-    return solver._epsilon_satisfied(domain,compiled);
+    const SmtSolver& solver,
+    const RealSpace& space,
+    const UpperBoxType& domain,
+    const List<SmtTheoryPrimitiveLiteral>& literals) {
+    auto compiled = solver._compile_theory_literals(space, literals);
+    return solver._epsilon_satisfied(domain, compiled);
 }
 
 DirectBoxProcessingObservation process_compiled_box(
-    SmtSolver const& solver,
-    RealSpace const& space,
-    UpperBoxType const& domain,
-    List<SmtTheoryPrimitiveLiteral> const& literals)
-{
-    auto compiled=solver._compile_theory_literals(space,literals);
-    auto processing=solver._process_box(domain,compiled);
+    const SmtSolver& solver,
+    const RealSpace& space,
+    const UpperBoxType& domain,
+    const List<SmtTheoryPrimitiveLiteral>& literals) {
+    auto compiled = solver._compile_theory_literals(space, literals);
+    auto processing = solver._process_box(domain, compiled);
     return {
         processing.status,
         processing.fused_direct_classification,
-        processing.epsilon_box_certification
-    };
+        processing.epsilon_box_certification};
 }
 
 Void accumulate_box_processing_statistics(
     SmtSearchStatistics& statistics,
-    BoxProcessingStatisticsInput const& input)
-{
-    statistics.hull_reduction_rounds+=input.hull_rounds;
-    statistics.hull_effective_reductions+=input.hull_effective;
-    statistics.shaving_reduction_rounds+=input.shaving_rounds;
-    statistics.shaving_effective_reductions+=input.shaving_effective;
-    statistics.monotone_reduction_rounds+=input.monotone_rounds;
-    statistics.monotone_effective_reductions+=input.monotone_effective;
+    const BoxProcessingStatisticsInput& input) {
+    statistics.hull_reduction_rounds += input.hull_rounds;
+    statistics.hull_effective_reductions += input.hull_effective;
+    statistics.shaving_reduction_rounds += input.shaving_rounds;
+    statistics.shaving_effective_reductions += input.shaving_effective;
+    statistics.monotone_reduction_rounds += input.monotone_rounds;
+    statistics.monotone_effective_reductions += input.monotone_effective;
 
-    if(input.sensitivity_guided_split) {
+    if (input.sensitivity_guided_split) {
         ++statistics.sensitivity_guided_splits;
     }
-    if(input.sensitivity_overrode_geometric_split) {
+    if (input.sensitivity_overrode_geometric_split) {
         ++statistics.sensitivity_overrides_geometric_splits;
     }
-    if(input.epsilon_box_certification) {
+    if (input.epsilon_box_certification) {
         ++statistics.epsilon_box_certifications;
     }
-    if(input.dp_resolution_exhausted) {
+    if (input.dp_resolution_exhausted) {
         ++statistics.dp_resolution_exhaustions;
         ++statistics.non_splittable_uncertified_boxes;
         ++statistics.non_splittable_epsilon_overlap_boxes;
     }
-    if(input.candidate_witness_search) {
+    if (input.candidate_witness_search) {
         ++statistics.candidate_witness_searches;
     }
-    if(input.candidate_witness_success) {
+    if (input.candidate_witness_success) {
         ++statistics.candidate_witness_successes;
     }
 
-    switch(input.status) {
+    switch (input.status) {
         case BoxProcessingStatus::PRUNED:
             ++statistics.boxes_pruned;
             break;
@@ -2430,43 +2325,42 @@ Void accumulate_box_processing_statistics(
 
 namespace {
 
-class SmtCdclSearch : private CdclSolver, private CdclTheory {
+class SmtCdclSearch : private CdclSolver,
+                      private CdclTheory {
   public:
-    SmtCdclSearch(SmtSolver const& solver,
-                  RealSpace const& space,
-                  ExactBoxType const& domain,
-                  SmtBooleanEncoding const& encoding,
+    SmtCdclSearch(const SmtSolver& solver,
+                  const RealSpace& space,
+                  const ExactBoxType& domain,
+                  const SmtBooleanEncoding& encoding,
                   Bool parallel)
-        : CdclSolver(encoding.variable_count(),encoding.clauses(),
-                    solver.configuration().learned_clause_limit()),
+        : CdclSolver(encoding.variable_count(), encoding.clauses(),
+                     solver.configuration().learned_clause_limit()),
           _solver(solver),
           _space(space),
           _domain(domain),
           _encoding(encoding),
-          _parallel(parallel)
-    { }
+          _parallel(parallel) {}
 
-    SmtResult solve()
-    {
-        if(_domain.is_empty()) {
+    SmtResult solve() {
+        if (_domain.is_empty()) {
             return SmtResult::unsat(_statistics);
         }
-        CdclSolveStatus const status=CdclSolver::solve(
-            this,[this](CdclAssignment const&) {
-                _certified_witness=this->_check_theory_assignment();
-                if(_certified_witness.has_value()) {
+        const CdclSolveStatus status = CdclSolver::solve(
+            this, [this](const CdclAssignment&) {
+                _certified_witness = this->_check_theory_assignment();
+                if (_certified_witness.has_value()) {
                     return CdclCompletionStatus::CERTIFIED;
                 }
-                return _theory_unknown_reason==SmtUnknownReason::NONE
-                    ? CdclCompletionStatus::REJECTED
-                    : CdclCompletionStatus::UNKNOWN;
+                return _theory_unknown_reason == SmtUnknownReason::NONE
+                         ? CdclCompletionStatus::REJECTED
+                         : CdclCompletionStatus::UNKNOWN;
             });
         this->_merge_cdcl_statistics();
-        if(status==CdclSolveStatus::SAT) {
-            return SmtResult::epsilon_sat(*_certified_witness,_statistics);
+        if (status == CdclSolveStatus::SAT) {
+            return SmtResult::epsilon_sat(*_certified_witness, _statistics);
         }
-        if(_theory_unknown_reason!=SmtUnknownReason::NONE) {
-            return SmtResult::unknown(_theory_unknown_reason,_statistics);
+        if (_theory_unknown_reason != SmtUnknownReason::NONE) {
+            return SmtResult::unknown(_theory_unknown_reason, _statistics);
         }
         // CDCL reports UNKNOWN only after partial or complete theory feedback
         // has already recorded a non-NONE _theory_unknown_reason. The check
@@ -2475,53 +2369,51 @@ class SmtCdclSearch : private CdclSolver, private CdclTheory {
     }
 
   private:
-    Void _merge_cdcl_statistics()
-    {
-        _statistics.learned_clauses+=_cdcl_statistics.learned_clauses;
-        _statistics.theory_learned_clauses+=_cdcl_statistics.theory_learned_clauses;
-        _statistics.theory_learned_clause_literals+=_cdcl_statistics.theory_learned_clause_literals;
-        _statistics.learned_clause_activity_bumps+=_cdcl_statistics.learned_clause_activity_bumps;
-        _statistics.learned_clause_pruning_runs+=_cdcl_statistics.learned_clause_pruning_runs;
-        _statistics.learned_clauses_pruned+=_cdcl_statistics.learned_clauses_pruned;
-        _statistics.boolean_conflicts+=_cdcl_statistics.boolean_conflicts;
-        _statistics.boolean_propagations+=_cdcl_statistics.boolean_propagations;
-        _statistics.boolean_reasoned_propagations+=_cdcl_statistics.boolean_reasoned_propagations;
-        _statistics.learned_clause_propagations+=_cdcl_statistics.learned_clause_propagations;
-        _statistics.theory_learned_clause_propagations+=_cdcl_statistics.theory_learned_clause_propagations;
-        _statistics.boolean_conflicts_analyzed+=_cdcl_statistics.boolean_conflicts_analyzed;
-        _statistics.learned_clause_literals+=_cdcl_statistics.learned_clause_literals;
-        _statistics.nonchronological_backjumps+=_cdcl_statistics.nonchronological_backjumps;
-        _statistics.boolean_backtracks+=_cdcl_statistics.boolean_backtracks;
-        _statistics.boolean_decisions+=_cdcl_statistics.boolean_decisions;
-        _statistics.max_decision_level=std::max(
-            _statistics.max_decision_level,_cdcl_statistics.max_decision_level);
-        _statistics.peak_active_non_theory_learned_clauses=std::max(
+    Void _merge_cdcl_statistics() {
+        _statistics.learned_clauses += _cdcl_statistics.learned_clauses;
+        _statistics.theory_learned_clauses += _cdcl_statistics.theory_learned_clauses;
+        _statistics.theory_learned_clause_literals += _cdcl_statistics.theory_learned_clause_literals;
+        _statistics.learned_clause_activity_bumps += _cdcl_statistics.learned_clause_activity_bumps;
+        _statistics.learned_clause_pruning_runs += _cdcl_statistics.learned_clause_pruning_runs;
+        _statistics.learned_clauses_pruned += _cdcl_statistics.learned_clauses_pruned;
+        _statistics.boolean_conflicts += _cdcl_statistics.boolean_conflicts;
+        _statistics.boolean_propagations += _cdcl_statistics.boolean_propagations;
+        _statistics.boolean_reasoned_propagations += _cdcl_statistics.boolean_reasoned_propagations;
+        _statistics.learned_clause_propagations += _cdcl_statistics.learned_clause_propagations;
+        _statistics.theory_learned_clause_propagations += _cdcl_statistics.theory_learned_clause_propagations;
+        _statistics.boolean_conflicts_analyzed += _cdcl_statistics.boolean_conflicts_analyzed;
+        _statistics.learned_clause_literals += _cdcl_statistics.learned_clause_literals;
+        _statistics.nonchronological_backjumps += _cdcl_statistics.nonchronological_backjumps;
+        _statistics.boolean_backtracks += _cdcl_statistics.boolean_backtracks;
+        _statistics.boolean_decisions += _cdcl_statistics.boolean_decisions;
+        _statistics.max_decision_level = std::max(
+            _statistics.max_decision_level, _cdcl_statistics.max_decision_level);
+        _statistics.peak_active_non_theory_learned_clauses = std::max(
             _statistics.peak_active_non_theory_learned_clauses,
             _cdcl_statistics.peak_active_non_theory_learned_clauses);
-        if(_cdcl_statistics.boolean_conflicts_analyzed!=0u) {
-            _statistics.last_learned_clause_literals=
+        if (_cdcl_statistics.boolean_conflicts_analyzed != 0u) {
+            _statistics.last_learned_clause_literals =
                 _cdcl_statistics.last_learned_clause_literals;
-            _statistics.last_learned_current_level_literals=
+            _statistics.last_learned_current_level_literals =
                 _cdcl_statistics.last_learned_current_level_literals;
-            _statistics.last_backjump_level=_cdcl_statistics.last_backjump_level;
+            _statistics.last_backjump_level = _cdcl_statistics.last_backjump_level;
         }
     }
 
-    std::vector<BooleanLiteral> _current_theory_nogood() const
-    {
+    std::vector<BooleanLiteral> _current_theory_nogood() const {
         std::vector<BooleanLiteral> clause;
         clause.reserve(_encoding.atom_count());
 
-        for(SizeType i=0u; i!=_encoding.atom_count(); ++i) {
-            SizeType variable=_encoding.atom_variable(i);
-            AssignmentInfo const& assignment=_assignment[variable];
-            if(assignment.value<0) {
+        for (SizeType i = 0u; i != _encoding.atom_count(); ++i) {
+            SizeType variable = _encoding.atom_variable(i);
+            const AssignmentInfo& assignment = _assignment[variable];
+            if (assignment.value < 0) {
                 continue;
             }
 
             BooleanLiteral literal(variable);
-            if(assignment.value==1) {
-                literal=literal.negation();
+            if (assignment.value == 1) {
+                literal = literal.negation();
             }
 
             clause.push_back(literal);
@@ -2531,23 +2423,22 @@ class SmtCdclSearch : private CdclSolver, private CdclTheory {
     }
 
     std::vector<SmtTheoryAlternatives> _theory_alternatives_for_nogood(
-        std::vector<BooleanLiteral> const& clause) const
-    {
+        const std::vector<BooleanLiteral>& clause) const {
         std::vector<SmtTheoryAlternatives> alternatives;
         alternatives.reserve(clause.size());
 
-        for(BooleanLiteral nogood_literal:clause) {
-            SizeType variable=nogood_literal.variable();
+        for (BooleanLiteral nogood_literal: clause) {
+            SizeType variable = nogood_literal.variable();
 
-            SizeType atom_index=0u;
-            while(_encoding.atom_variable(atom_index)!=variable) {
+            SizeType atom_index = 0u;
+            while (_encoding.atom_variable(atom_index) != variable) {
                 ++atom_index;
             }
 
-            SmtTheoryLiteral literal=make_smt_theory_literal(_encoding.atom(atom_index));
-            Bool assignment_value=not nogood_literal.positive();
-            if(not assignment_value) {
-                literal=literal.negated();
+            SmtTheoryLiteral literal = make_smt_theory_literal(_encoding.atom(atom_index));
+            Bool assignment_value = not nogood_literal.positive();
+            if (not assignment_value) {
+                literal = literal.negated();
             }
             alternatives.push_back(normalize_smt_theory_literal(literal));
         }
@@ -2555,53 +2446,51 @@ class SmtCdclSearch : private CdclSolver, private CdclTheory {
         return alternatives;
     }
 
-    Bool _nogood_theory_consistent(std::vector<BooleanLiteral> const& clause)
-    {
+    Bool _nogood_theory_consistent(const std::vector<BooleanLiteral>& clause) {
         ++_statistics.theory_minimization_checks;
-        std::vector<SmtTheoryAlternatives> alternatives=
+        std::vector<SmtTheoryAlternatives> alternatives =
             this->_theory_alternatives_for_nogood(clause);
         List<SmtTheoryPrimitiveLiteral> literals;
-        return this->_theory_alternatives_consistent(alternatives,0u,literals);
+        return this->_theory_alternatives_consistent(alternatives, 0u, literals);
     }
 
-    std::vector<BooleanLiteral> _minimize_theory_nogood(std::vector<BooleanLiteral> clause)
-    {
-        std::vector<SizeType> trail_rank(_assignment.size(),0u);
-        for(SizeType rank=0u; rank<_trail.size(); ++rank) {
-            trail_rank[_trail[rank]]=rank+1u;
+    std::vector<BooleanLiteral> _minimize_theory_nogood(std::vector<BooleanLiteral> clause) {
+        std::vector<SizeType> trail_rank(_assignment.size(), 0u);
+        for (SizeType rank = 0u; rank < _trail.size(); ++rank) {
+            trail_rank[_trail[rank]] = rank + 1u;
         }
 
-        std::vector<SizeType> decision_levels(_assignment.size(),0u);
-        for(SizeType variable=0u; variable!=_assignment.size(); ++variable) {
-            decision_levels[variable]=_assignment[variable].decision_level;
+        std::vector<SizeType> decision_levels(_assignment.size(), 0u);
+        for (SizeType variable = 0u; variable != _assignment.size(); ++variable) {
+            decision_levels[variable] = _assignment[variable].decision_level;
         }
         SmtSolverTestSupport::order_theory_nogood(
-            clause,decision_levels,trail_rank);
+            clause, decision_levels, trail_rank);
 
-        SizeType first_variable=
+        SizeType first_variable =
             clause.front().variable();
         SmtSolverTestSupport::record_first_minimization_candidate_trail_rank(
-            _statistics,trail_rank[first_variable]);
+            _statistics, trail_rank[first_variable]);
 
-        SizeType const budget=_solver.configuration().theory_minimization_budget();
-        SizeType checks=0u;
-        SizeType i=0u;
-        while(i<clause.size()) {
-            if(checks>=budget) {
+        const SizeType budget = _solver.configuration().theory_minimization_budget();
+        SizeType checks = 0u;
+        SizeType i = 0u;
+        while (i < clause.size()) {
+            if (checks >= budget) {
                 ++_statistics.theory_minimization_budget_exhaustions;
                 break;
             }
 
-            std::vector<BooleanLiteral> candidate=clause;
-            candidate.erase(candidate.begin()+static_cast<std::ptrdiff_t>(i));
-            if(candidate.empty()) {
+            std::vector<BooleanLiteral> candidate = clause;
+            candidate.erase(candidate.begin() + static_cast<std::ptrdiff_t>(i));
+            if (candidate.empty()) {
                 ++i;
                 continue;
             }
 
             ++checks;
-            if(not this->_nogood_theory_consistent(candidate)) {
-                clause=std::move(candidate);
+            if (not this->_nogood_theory_consistent(candidate)) {
+                clause = std::move(candidate);
             } else {
                 ++i;
             }
@@ -2611,60 +2500,58 @@ class SmtCdclSearch : private CdclSolver, private CdclTheory {
 
     // CdclTheory callback: a certified numerical inconsistency is reported
     // as a theory-entailment clause, but UNKNOWN is never a conflict.
-    CdclTheoryFeedback check_partial(CdclAssignment const& assignment) override
-    {
+    CdclTheoryFeedback check_partial(const CdclAssignment& assignment) override {
         // The full-model completion callback performs the certified theory
         // search. Avoid a redundant partial check on complete assignments.
-        if(std::all_of(assignment.begin(),assignment.end(),
-               [](std::optional<Bool> const& value) { return value.has_value(); })) {
+        if (std::all_of(assignment.begin(), assignment.end(),
+                        [](const std::optional<Bool>& value) { return value.has_value(); })) {
             return CdclTheoryFeedback::consistent();
         }
         std::vector<SmtTheoryAlternatives> alternatives;
         alternatives.reserve(_encoding.atom_count());
 
-        for(SizeType i=0; i!=_encoding.atom_count(); ++i) {
-            SizeType variable=_encoding.atom_variable(i);
-            if(not assignment[variable].has_value()) {
+        for (SizeType i = 0; i != _encoding.atom_count(); ++i) {
+            SizeType variable = _encoding.atom_variable(i);
+            if (not assignment[variable].has_value()) {
                 continue;
             }
 
-            SmtTheoryLiteral literal=make_smt_theory_literal(_encoding.atom(i));
-            if(not *assignment[variable]) {
-                literal=literal.negated();
+            SmtTheoryLiteral literal = make_smt_theory_literal(_encoding.atom(i));
+            if (not *assignment[variable]) {
+                literal = literal.negated();
             }
             alternatives.push_back(normalize_smt_theory_literal(literal));
         }
 
-        if(alternatives.empty()) {
+        if (alternatives.empty()) {
             return CdclTheoryFeedback::consistent();
         }
 
         ++_statistics.theory_checks;
         List<SmtTheoryPrimitiveLiteral> literals;
-        Bool consistent=this->_theory_alternatives_consistent(alternatives,0u,literals);
-        if(not consistent) {
+        Bool consistent = this->_theory_alternatives_consistent(alternatives, 0u, literals);
+        if (not consistent) {
             // _theory_alternatives_consistent only reports false for a
             // certified contradiction; unresolved numerical searches remain
             // conservatively consistent or UNKNOWN.
             ++_statistics.theory_conflicts;
-            std::vector<BooleanLiteral> clause=this->_current_theory_nogood();
-            SizeType raw_size=clause.size();
-            _statistics.theory_nogood_raw_literals+=raw_size;
-            clause=this->_minimize_theory_nogood(std::move(clause));
-            _statistics.theory_nogood_minimized_literals+=clause.size();
-            _statistics.theory_nogood_literals_removed+=raw_size-clause.size();
+            std::vector<BooleanLiteral> clause = this->_current_theory_nogood();
+            SizeType raw_size = clause.size();
+            _statistics.theory_nogood_raw_literals += raw_size;
+            clause = this->_minimize_theory_nogood(std::move(clause));
+            _statistics.theory_nogood_minimized_literals += clause.size();
+            _statistics.theory_nogood_literals_removed += raw_size - clause.size();
             return CdclTheoryFeedback::conflict(std::move(clause));
         }
-        return _theory_unknown_reason==SmtUnknownReason::NONE
-            ? CdclTheoryFeedback::consistent()
-            : CdclTheoryFeedback::unknown();
+        return _theory_unknown_reason == SmtUnknownReason::NONE
+                 ? CdclTheoryFeedback::consistent()
+                 : CdclTheoryFeedback::unknown();
     }
 
-    SmtResult _solve_theory_literals(List<SmtTheoryPrimitiveLiteral> const& literals)
-    {
-        SizeType const limit=_solver.configuration().box_processing_limit();
-        SizeType const processed=_statistics.boxes_processed;
-        SizeType const remaining=limit-std::min(processed,limit);
+    SmtResult _solve_theory_literals(const List<SmtTheoryPrimitiveLiteral>& literals) {
+        const SizeType limit = _solver.configuration().box_processing_limit();
+        const SizeType processed = _statistics.boxes_processed;
+        const SizeType remaining = limit - std::min(processed, limit);
         SmtSolver theory_solver(SmtSolverConfiguration(
             _solver.configuration().epsilon(),
             _solver.configuration().theory_minimization_budget(),
@@ -2682,46 +2569,44 @@ class SmtCdclSearch : private CdclSolver, private CdclTheory {
             _solver.configuration().preclassification_enabled(),
             _solver.configuration().adaptive_preclassification_enabled()));
         return _parallel
-            ? theory_solver.solve_parallel(_space,_domain,literals)
-            : theory_solver.solve(_space,_domain,literals);
+                 ? theory_solver.solve_parallel(_space, _domain, literals)
+                 : theory_solver.solve(_space, _domain, literals);
     }
 
     Bool _theory_alternatives_consistent(
-        std::vector<SmtTheoryAlternatives> const& alternatives,
+        const std::vector<SmtTheoryAlternatives>& alternatives,
         SizeType atom,
-        List<SmtTheoryPrimitiveLiteral>& literals)
-    {
-        if(atom==alternatives.size()) {
-            SmtResult result=this->_solve_theory_literals(literals);
-            SmtSolverTestSupport::accumulate_statistics(_statistics,result.statistics());
-            auto interpretation=SmtSolverTestSupport::interpret_theory_result(result);
-            _theory_unknown_reason=SmtSolverTestSupport::combine_unknown_reasons(
-                _theory_unknown_reason,interpretation.unknown_reason);
+        List<SmtTheoryPrimitiveLiteral>& literals) {
+        if (atom == alternatives.size()) {
+            SmtResult result = this->_solve_theory_literals(literals);
+            SmtSolverTestSupport::accumulate_statistics(_statistics, result.statistics());
+            auto interpretation = SmtSolverTestSupport::interpret_theory_result(result);
+            _theory_unknown_reason = SmtSolverTestSupport::combine_unknown_reasons(
+                _theory_unknown_reason, interpretation.unknown_reason);
             return interpretation.consistent;
         }
 
-        for(auto const& alternative:alternatives[atom]) {
-            SizeType old_size=literals.size();
-            for(auto const& primitive:alternative) {
+        for (const auto& alternative: alternatives[atom]) {
+            SizeType old_size = literals.size();
+            for (const auto& primitive: alternative) {
                 literals.append(primitive);
             }
 
-            Bool consistent=this->_theory_alternatives_consistent(
-                alternatives,atom+1u,literals);
+            Bool consistent = this->_theory_alternatives_consistent(
+                alternatives, atom + 1u, literals);
             literals.erase(
-                literals.begin()+static_cast<std::ptrdiff_t>(old_size),
+                literals.begin() + static_cast<std::ptrdiff_t>(old_size),
                 literals.end());
 
-            if(consistent) {
+            if (consistent) {
                 return true;
             }
         }
         return false;
     }
 
-    std::optional<UpperBoxType> _check_theory_assignment()
-    {
-        if(_encoding.atom_count()==0u) {
+    std::optional<UpperBoxType> _check_theory_assignment() {
+        if (_encoding.atom_count() == 0u) {
             return singleton_box(_domain.midpoint());
         }
 
@@ -2730,54 +2615,54 @@ class SmtCdclSearch : private CdclSolver, private CdclTheory {
         std::vector<SmtTheoryAlternatives> alternatives;
         alternatives.reserve(_encoding.atom_count());
 
-        for(SizeType i=0; i!=_encoding.atom_count(); ++i) {
-            SizeType variable=_encoding.atom_variable(i);
+        for (SizeType i = 0; i != _encoding.atom_count(); ++i) {
+            SizeType variable = _encoding.atom_variable(i);
 
-            SmtTheoryLiteral literal=make_smt_theory_literal(_encoding.atom(i));
-            if(_assignment[variable].value==0) {
-                literal=literal.negated();
+            SmtTheoryLiteral literal = make_smt_theory_literal(_encoding.atom(i));
+            if (_assignment[variable].value == 0) {
+                literal = literal.negated();
             }
             alternatives.push_back(normalize_smt_theory_literal(literal));
         }
 
         List<SmtTheoryPrimitiveLiteral> literals;
-        return this->_search_theory_alternatives(alternatives,0u,literals);
+        return this->_search_theory_alternatives(alternatives, 0u, literals);
     }
 
     std::optional<UpperBoxType> _search_theory_alternatives(
-        std::vector<SmtTheoryAlternatives> const& alternatives,
+        const std::vector<SmtTheoryAlternatives>& alternatives,
         SizeType atom,
-        List<SmtTheoryPrimitiveLiteral>& literals)
-    {
-        if(atom==alternatives.size()) {
-            SmtResult result=this->_solve_theory_literals(literals);
-            SmtSolverTestSupport::accumulate_statistics(_statistics,result.statistics());
-            auto interpretation=SmtSolverTestSupport::interpret_theory_result(result);
-            _theory_unknown_reason=SmtSolverTestSupport::combine_unknown_reasons(
-                _theory_unknown_reason,interpretation.unknown_reason);
+        List<SmtTheoryPrimitiveLiteral>& literals) {
+        if (atom == alternatives.size()) {
+            SmtResult result = this->_solve_theory_literals(literals);
+            SmtSolverTestSupport::accumulate_statistics(_statistics, result.statistics());
+            auto interpretation = SmtSolverTestSupport::interpret_theory_result(result);
+            _theory_unknown_reason = SmtSolverTestSupport::combine_unknown_reasons(
+                _theory_unknown_reason, interpretation.unknown_reason);
             return interpretation.witness;
         }
 
-        for(auto const& alternative:alternatives[atom]) {
-            SizeType old_size=literals.size();
-            for(auto const& primitive:alternative) {
+        for (const auto& alternative: alternatives[atom]) {
+            SizeType old_size = literals.size();
+            for (const auto& primitive: alternative) {
                 literals.append(primitive);
             }
 
-            if(auto witness=this->_search_theory_alternatives(
-                    alternatives,atom+1u,literals); witness.has_value()) {
-                literals.erase(literals.begin()+static_cast<std::ptrdiff_t>(old_size),literals.end());
+            if (auto witness = this->_search_theory_alternatives(
+                    alternatives, atom + 1u, literals);
+                witness.has_value()) {
+                literals.erase(literals.begin() + static_cast<std::ptrdiff_t>(old_size), literals.end());
                 return witness;
             }
-            literals.erase(literals.begin()+static_cast<std::ptrdiff_t>(old_size),literals.end());
+            literals.erase(literals.begin() + static_cast<std::ptrdiff_t>(old_size), literals.end());
         }
         return std::nullopt;
     }
 
-    SmtSolver const& _solver;
-    RealSpace const& _space;
-    ExactBoxType const& _domain;
-    SmtBooleanEncoding const& _encoding;
+    const SmtSolver& _solver;
+    const RealSpace& _space;
+    const ExactBoxType& _domain;
+    const SmtBooleanEncoding& _encoding;
     Bool _parallel;
     std::optional<UpperBoxType> _certified_witness;
     SmtUnknownReason _theory_unknown_reason = SmtUnknownReason::NONE;
@@ -2785,26 +2670,24 @@ class SmtCdclSearch : private CdclSolver, private CdclTheory {
 };
 } // namespace
 
-SmtResult SmtSolver::solve(RealSpace const& space,
-                           ExactBoxType const& domain,
-                           ContinuousPredicate const& predicate) const
-{
+SmtResult SmtSolver::solve(const RealSpace& space,
+                           const ExactBoxType& domain,
+                           const ContinuousPredicate& predicate) const {
     ARIADNE_PRECONDITION(domain.is_bounded());
-    ARIADNE_PRECONDITION(space.size()==domain.dimension());
+    ARIADNE_PRECONDITION(space.size() == domain.dimension());
 
-    SmtBooleanEncoding encoding=SmtBooleanEncoder().encode(predicate);
-    return SmtCdclSearch(*this,space,domain,encoding,false).solve();
+    SmtBooleanEncoding encoding = SmtBooleanEncoder().encode(predicate);
+    return SmtCdclSearch(*this, space, domain, encoding, false).solve();
 }
 
-SmtResult SmtSolver::solve_parallel(RealSpace const& space,
-                                    ExactBoxType const& domain,
-                                    ContinuousPredicate const& predicate) const
-{
+SmtResult SmtSolver::solve_parallel(const RealSpace& space,
+                                    const ExactBoxType& domain,
+                                    const ContinuousPredicate& predicate) const {
     ARIADNE_PRECONDITION(domain.is_bounded());
-    ARIADNE_PRECONDITION(space.size()==domain.dimension());
+    ARIADNE_PRECONDITION(space.size() == domain.dimension());
 
-    SmtBooleanEncoding encoding=SmtBooleanEncoder().encode(predicate);
-    return SmtCdclSearch(*this,space,domain,encoding,true).solve();
+    SmtBooleanEncoding encoding = SmtBooleanEncoder().encode(predicate);
+    return SmtCdclSearch(*this, space, domain, encoding, true).solve();
 }
 
 } // namespace Ariadne

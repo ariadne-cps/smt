@@ -52,10 +52,10 @@ enum class SmtTheoryRelation {
 class SmtTheoryLiteral {
   public:
     SmtTheoryLiteral(RealExpression lhs, SmtTheoryRelation relation, RealExpression rhs)
-        : _lhs(std::move(lhs)), _relation(relation), _rhs(std::move(rhs)) { }
+        : _lhs(std::move(lhs)), _relation(relation), _rhs(std::move(rhs)) {}
 
-    RealExpression const& lhs() const { return _lhs; }
-    RealExpression const& rhs() const { return _rhs; }
+    const RealExpression& lhs() const { return _lhs; }
+    const RealExpression& rhs() const { return _rhs; }
     SmtTheoryRelation relation() const { return _relation; }
 
     SmtTheoryLiteral negated() const;
@@ -77,9 +77,9 @@ enum class SmtTheoryPrimitiveRelation {
 class SmtTheoryPrimitiveLiteral {
   public:
     SmtTheoryPrimitiveLiteral(RealExpression expression, SmtTheoryPrimitiveRelation relation)
-        : _expression(std::move(expression)), _relation(relation) { }
+        : _expression(std::move(expression)), _relation(relation) {}
 
-    RealExpression const& expression() const { return _expression; }
+    const RealExpression& expression() const { return _expression; }
     SmtTheoryPrimitiveRelation relation() const { return _relation; }
 
   private:
@@ -107,9 +107,9 @@ enum class SmtTheoryWeakRelation {
 class SmtTheoryWeakLiteral {
   public:
     SmtTheoryWeakLiteral(RealExpression expression, SmtTheoryWeakRelation relation, ExactDouble epsilon)
-        : _expression(std::move(expression)), _relation(relation), _epsilon(epsilon) { }
+        : _expression(std::move(expression)), _relation(relation), _epsilon(epsilon) {}
 
-    RealExpression const& expression() const { return _expression; }
+    const RealExpression& expression() const { return _expression; }
     SmtTheoryWeakRelation relation() const { return _relation; }
     ExactDouble epsilon() const { return _epsilon; }
 
@@ -121,17 +121,17 @@ class SmtTheoryWeakLiteral {
 
 //! \brief Convert a comparison node of a continuous predicate into a theory literal.
 //! \pre The predicate root is one of EQ, NEQ, LEQ, GEQ, LT or GT.
-SmtTheoryLiteral make_smt_theory_literal(ContinuousPredicate const& predicate);
+SmtTheoryLiteral make_smt_theory_literal(const ContinuousPredicate& predicate);
 
 //! \brief Normalize a literal to primitives f=0, f>=0 and f>0.
 //!
 //! Disequality is expanded into two alternatives, as required by the standard
 //! delta-SMT normalization.
-SmtTheoryAlternatives normalize_smt_theory_literal(SmtTheoryLiteral const& literal);
+SmtTheoryAlternatives normalize_smt_theory_literal(const SmtTheoryLiteral& literal);
 
 //! \brief Apply epsilon weakening to a normalized primitive.
 //! \pre epsilon is strictly positive.
-SmtTheoryWeakLiteral weaken_smt_theory_literal(SmtTheoryPrimitiveLiteral const& literal,
+SmtTheoryWeakLiteral weaken_smt_theory_literal(const SmtTheoryPrimitiveLiteral& literal,
                                                ExactDouble epsilon);
 
 OutputStream& operator<<(OutputStream& os, SmtTheoryRelation relation);

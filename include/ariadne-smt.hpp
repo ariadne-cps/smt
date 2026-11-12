@@ -29,14 +29,13 @@
 #ifndef ARIADNE_ARIADNE_SMT_HPP
 #define ARIADNE_ARIADNE_SMT_HPP
 
+#include "smt/smt_boolean.hpp"
+#include "smt/smt_solver.hpp"
+#include "smt/smt_theory.hpp"
+
 #include "ariadne-cdcl.hpp"
 #include "ariadne-constraint-solving.hpp"
 #include "ariadne-equation-solving.hpp"
-
 #include "ariadne-symbolic.hpp"
-
-#include "smt/smt_theory.hpp"
-#include "smt/smt_boolean.hpp"
-#include "smt/smt_solver.hpp"
 
 #endif

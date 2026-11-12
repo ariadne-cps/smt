@@ -29,19 +29,20 @@
 #ifndef ARIADNE_SMT_SOLVER_HPP
 #define ARIADNE_SMT_SOLVER_HPP
 
+#include <limits>
+#include <mutex>
 #include <optional>
 #include <vector>
-#include <mutex>
-#include <limits>
 
-#include "geometry/box.hpp"
-#include "numeric/numeric.hpp"
 #include "function/constraint.hpp"
 #include "function/procedure.hpp"
-#include "constraint-solving/constraint_solver.hpp"
-#include "smt/smt_theory.hpp"
+#include "geometry/box.hpp"
+#include "numeric/numeric.hpp"
 #include "smt/smt_boolean.hpp"
+#include "smt/smt_theory.hpp"
 #include "symbolic/space.hpp"
+
+#include "constraint-solving/constraint_solver.hpp"
 
 namespace Ariadne {
 
@@ -76,20 +77,20 @@ class SmtSolverConfiguration {
   public:
     explicit SmtSolverConfiguration(
         ExactDouble epsilon,
-        SizeType theory_minimization_budget=std::numeric_limits<SizeType>::max(),
-        SizeType learned_clause_limit=std::numeric_limits<SizeType>::max(),
-        SizeType box_processing_limit=std::numeric_limits<SizeType>::max(),
-        Bool candidate_search_enabled=true,
-        Bool monotone_reduction_enabled=false,
-        Bool sensitivity_split_enabled=true,
-        Bool deterministic_witness_probing_enabled=true,
-        Bool shaving_reduction_enabled=true,
-        Bool hull_reduction_enabled=true,
-        Bool interval_lookahead_split_enabled=false,
-        Bool upper_child_first=false,
-        Bool interval_newton_reduction_enabled=false,
-        Bool preclassification_enabled=false,
-        Bool adaptive_preclassification_enabled=false);
+        SizeType theory_minimization_budget = std::numeric_limits<SizeType>::max(),
+        SizeType learned_clause_limit = std::numeric_limits<SizeType>::max(),
+        SizeType box_processing_limit = std::numeric_limits<SizeType>::max(),
+        Bool candidate_search_enabled = true,
+        Bool monotone_reduction_enabled = false,
+        Bool sensitivity_split_enabled = true,
+        Bool deterministic_witness_probing_enabled = true,
+        Bool shaving_reduction_enabled = true,
+        Bool hull_reduction_enabled = true,
+        Bool interval_lookahead_split_enabled = false,
+        Bool upper_child_first = false,
+        Bool interval_newton_reduction_enabled = false,
+        Bool preclassification_enabled = false,
+        Bool adaptive_preclassification_enabled = false);
 
     //! \brief The logical epsilon used for weakening constraints.
     ExactDouble epsilon() const { return _epsilon; }
@@ -271,7 +272,7 @@ class SmtResult {
     static SmtResult unsat(SmtSearchStatistics statistics = {});
 
     //! \brief Construct an EPSILON_SAT result with a validated witness box.
-    static SmtResult epsilon_sat(UpperBoxType const& witness,
+    static SmtResult epsilon_sat(const UpperBoxType& witness,
                                  SmtSearchStatistics statistics = {});
 
     //! \brief Construct an inconclusive result with an explicit cause.
@@ -280,9 +281,9 @@ class SmtResult {
         SmtSearchStatistics statistics = {});
 
     SmtResultStatus status() const { return _status; }
-    Bool is_unsat() const { return _status==SmtResultStatus::UNSAT; }
-    Bool is_epsilon_sat() const { return _status==SmtResultStatus::EPSILON_SAT; }
-    Bool is_unknown() const { return _status==SmtResultStatus::UNKNOWN; }
+    Bool is_unsat() const { return _status == SmtResultStatus::UNSAT; }
+    Bool is_epsilon_sat() const { return _status == SmtResultStatus::EPSILON_SAT; }
+    Bool is_unknown() const { return _status == SmtResultStatus::UNKNOWN; }
 
     //! \brief Cause of UNKNOWN; NONE for conclusive results.
     SmtUnknownReason unknown_reason() const { return _unknown_reason; }
@@ -292,13 +293,13 @@ class SmtResult {
 
     //! \brief Return the witness box.
     //! \pre The result is EPSILON_SAT.
-    UpperBoxType const& witness() const;
+    const UpperBoxType& witness() const;
 
-    SmtSearchStatistics const& statistics() const { return _statistics; }
+    const SmtSearchStatistics& statistics() const { return _statistics; }
 
   private:
     SmtResult(SmtResultStatus status, SmtSearchStatistics statistics);
-    SmtResult(SmtResultStatus status, UpperBoxType const& witness,
+    SmtResult(SmtResultStatus status, const UpperBoxType& witness,
               SmtSearchStatistics statistics);
 
     SmtResultStatus _status;
@@ -329,16 +330,16 @@ struct LearnedClausePruningEntry {
 };
 
 std::vector<SizeType> learned_clause_pruning_candidates(
-    std::vector<LearnedClausePruningEntry> const& entries);
+    const std::vector<LearnedClausePruningEntry>& entries);
 
 SizeType apply_learned_clause_pruning(
-    std::vector<SizeType> const& candidates,
+    const std::vector<SizeType>& candidates,
     SizeType active_count,
     SizeType limit);
 
 Void accumulate_statistics(
     SmtSearchStatistics& target,
-    SmtSearchStatistics const& source);
+    const SmtSearchStatistics& source);
 
 /** @brief PreclassificationShadowSummary represents an SMT search component. */
 struct PreclassificationShadowSummary {
@@ -351,10 +352,10 @@ struct PreclassificationShadowSummary {
 };
 
 PreclassificationShadowSummary preclassification_shadow_summary(
-    std::vector<SmtPreclassificationOutcome> const& outcomes,
-    SizeType initial_window=16u,
-    SizeType active_window=8u,
-    SizeType refresh_period=8u);
+    const std::vector<SmtPreclassificationOutcome>& outcomes,
+    SizeType initial_window = 16u,
+    SizeType active_window = 8u,
+    SizeType refresh_period = 8u);
 
 Void record_first_minimization_candidate_trail_rank(
     SmtSearchStatistics& statistics,
@@ -374,11 +375,11 @@ Void record_parallel_processing_thread();
 Bool parallel_stop_condition(Bool found, Bool limit_reached);
 std::vector<UpperBoxType> parallel_children_to_append(
     Bool found,
-    Pair<UpperBoxType,UpperBoxType> const& children);
+    const Pair<UpperBoxType, UpperBoxType>& children);
 std::vector<UpperBoxType> sequential_children_to_push(
     Bool upper_child_first,
-    Pair<UpperBoxType,UpperBoxType> const& children);
-Pair<Bool,Bool> parallel_witness_claim_sequence();
+    const Pair<UpperBoxType, UpperBoxType>& children);
+Pair<Bool, Bool> parallel_witness_claim_sequence();
 
 /** @brief CandidateWitnessOutcome represents an SMT search component. */
 struct CandidateWitnessOutcome {
@@ -389,9 +390,9 @@ struct CandidateWitnessOutcome {
 
 CandidateWitnessOutcome candidate_witness_outcome(
     Bool attempted,
-    std::optional<UpperBoxType> const& certified_witness);
+    const std::optional<UpperBoxType>& certified_witness);
 
-SizeType epsilon_witness_candidate_count(UpperBoxType const& domain);
+SizeType epsilon_witness_candidate_count(const UpperBoxType& domain);
 
 /** @brief SensitivitySplitSelection represents an SMT search component. */
 struct SensitivitySplitSelection {
@@ -401,29 +402,29 @@ struct SensitivitySplitSelection {
 };
 
 SensitivitySplitSelection sensitivity_split_selection(
-    UpperBoxType const& domain,
-    std::vector<ValidatedScalarMultivariateFunction> const& functions);
+    const UpperBoxType& domain,
+    const std::vector<ValidatedScalarMultivariateFunction>& functions);
 
 Void validate_differentiable_expression_kind(OperatorKind kind);
 
-Bool expression_is_differentiable(RealExpression const& expression);
+Bool expression_is_differentiable(const RealExpression& expression);
 
 std::optional<ValidatedScalarMultivariateFunction> optional_derivative(
-    RealExpression const& expression,
-    ValidatedScalarMultivariateFunction const& function,
+    const RealExpression& expression,
+    const ValidatedScalarMultivariateFunction& function,
     SizeType variable);
 
 //! \brief Number of cached coordinate derivatives produced while compiling
 //! theory literals under the solver's current configuration.
 SizeType compiled_theory_derivative_count(
-    SmtSolver const& solver,
-    RealSpace const& space,
-    List<SmtTheoryPrimitiveLiteral> const& literals);
+    const SmtSolver& solver,
+    const RealSpace& space,
+    const List<SmtTheoryPrimitiveLiteral>& literals);
 
 SizeType interval_newton_subsystem_candidate_count(
-    SmtSolver const& solver,
-    RealSpace const& space,
-    List<SmtTheoryPrimitiveLiteral> const& literals);
+    const SmtSolver& solver,
+    const RealSpace& space,
+    const List<SmtTheoryPrimitiveLiteral>& literals);
 
 /** @brief SearchOutcome represents an SMT search component. */
 struct SearchOutcome {
@@ -431,7 +432,7 @@ struct SearchOutcome {
     std::optional<SizeType> backjump_level;
 
     static SearchOutcome exhausted();
-    static SearchOutcome found(UpperBoxType const& witness);
+    static SearchOutcome found(const UpperBoxType& witness);
     static SearchOutcome backjump(SizeType level);
 };
 
@@ -440,9 +441,9 @@ SmtUnknownReason combine_unknown_reasons(
     SmtUnknownReason second);
 
 SmtResult finalize_search_outcome(
-    SearchOutcome const& outcome,
+    const SearchOutcome& outcome,
     SmtUnknownReason theory_unknown_reason,
-    SmtSearchStatistics const& statistics);
+    const SmtSearchStatistics& statistics);
 
 /** @brief BoxProcessingStatus represents an SMT search component. */
 enum class BoxProcessingStatus {
@@ -471,7 +472,7 @@ struct BoxProcessingStatisticsInput {
 
 Void accumulate_box_processing_statistics(
     SmtSearchStatistics& statistics,
-    BoxProcessingStatisticsInput const& input);
+    const BoxProcessingStatisticsInput& input);
 
 /** @brief DirectBoxProcessingObservation represents an SMT search component. */
 struct DirectBoxProcessingObservation {
@@ -481,31 +482,31 @@ struct DirectBoxProcessingObservation {
 };
 
 DirectBoxProcessingObservation process_compiled_box(
-    SmtSolver const& solver,
-    RealSpace const& space,
-    UpperBoxType const& domain,
-    List<SmtTheoryPrimitiveLiteral> const& literals);
+    const SmtSolver& solver,
+    const RealSpace& space,
+    const UpperBoxType& domain,
+    const List<SmtTheoryPrimitiveLiteral>& literals);
 
 Void validate_primitive_relation(SmtTheoryPrimitiveRelation relation);
 
 std::vector<BooleanLiteral> resolve_clause_on_variable(
-    std::vector<BooleanLiteral> const& lhs,
-    std::vector<BooleanLiteral> const& rhs,
+    const std::vector<BooleanLiteral>& lhs,
+    const std::vector<BooleanLiteral>& rhs,
     SizeType variable);
 
 Void order_theory_nogood(
     std::vector<BooleanLiteral>& clause,
-    std::vector<SizeType> const& decision_levels,
-    std::vector<SizeType> const& trail_rank);
+    const std::vector<SizeType>& decision_levels,
+    const std::vector<SizeType>& trail_rank);
 
 Bool clause_is_learned(SizeType index, SizeType original_clause_count);
 Bool learned_clause_is_theory(
     SizeType index,
     SizeType original_clause_count,
-    std::vector<Bool> const& theory_flags);
+    const std::vector<Bool>& theory_flags);
 Bool assignment_locks_clause(
     int8_t assignment_value,
-    std::optional<SizeType> const& reason_clause,
+    const std::optional<SizeType>& reason_clause,
     SizeType clause_index);
 
 /** @brief TheoryAtomTruth represents an SMT search component. */
@@ -517,12 +518,12 @@ enum class TheoryAtomTruth {
 
 TheoryAtomTruth classify_theory_relation(
     SmtTheoryRelation relation,
-    UpperIntervalType const& image);
+    const UpperIntervalType& image);
 
 TheoryAtomTruth classify_theory_atom(
-    RealSpace const& space,
-    ExactBoxType const& domain,
-    ContinuousPredicate const& atom);
+    const RealSpace& space,
+    const ExactBoxType& domain,
+    const ContinuousPredicate& atom);
 
 /** @brief TheoryAtomImplication represents an SMT search component. */
 struct TheoryAtomImplication {
@@ -532,20 +533,20 @@ struct TheoryAtomImplication {
 
 Bool epsilon_primitive_image_infeasible(
     SmtTheoryPrimitiveRelation relation,
-    UpperIntervalType const& image,
-    FloatDP const& epsilon);
+    const UpperIntervalType& image,
+    const FloatDP& epsilon);
 
 Bool epsilon_theory_literal_infeasible(
-    SmtSolver const& solver,
-    RealSpace const& space,
-    ExactBoxType const& domain,
-    SmtTheoryLiteral const& literal);
+    const SmtSolver& solver,
+    const RealSpace& space,
+    const ExactBoxType& domain,
+    const SmtTheoryLiteral& literal);
 
 TheoryAtomImplication domain_theory_implication(
-    SmtSolver const& solver,
-    RealSpace const& space,
-    ExactBoxType const& domain,
-    ContinuousPredicate const& atom);
+    const SmtSolver& solver,
+    const RealSpace& space,
+    const ExactBoxType& domain,
+    const ContinuousPredicate& atom);
 
 /** @brief TheoryResultInterpretation represents an SMT search component. */
 struct TheoryResultInterpretation {
@@ -554,22 +555,22 @@ struct TheoryResultInterpretation {
     std::optional<UpperBoxType> witness;
 };
 
-TheoryResultInterpretation interpret_theory_result(SmtResult const& result);
+TheoryResultInterpretation interpret_theory_result(const SmtResult& result);
 
 ExactIntervalType original_bounds(
-    SmtSolver const& solver,
+    const SmtSolver& solver,
     SmtTheoryPrimitiveRelation relation);
 
 Bool epsilon_satisfied(
-    SmtSolver const& solver,
-    UpperBoxType const& domain,
-    List<ValidatedConstraint> const& constraints);
+    const SmtSolver& solver,
+    const UpperBoxType& domain,
+    const List<ValidatedConstraint>& constraints);
 
 Bool epsilon_satisfied(
-    SmtSolver const& solver,
-    RealSpace const& space,
-    UpperBoxType const& domain,
-    List<SmtTheoryPrimitiveLiteral> const& literals);
+    const SmtSolver& solver,
+    const RealSpace& space,
+    const UpperBoxType& domain,
+    const List<SmtTheoryPrimitiveLiteral>& literals);
 
 } // namespace SmtSolverTestSupport
 
@@ -578,59 +579,59 @@ Bool epsilon_satisfied(
 class SmtSolver {
   public:
     explicit SmtSolver(SmtSolverConfiguration configuration)
-        : _configuration(configuration) { }
+        : _configuration(configuration) {}
 
     //! \brief Solve a bounded conjunction of validated real constraints.
-    SmtResult solve(ExactBoxType const& domain,
-                    List<ValidatedConstraint> const& constraints) const;
+    SmtResult solve(const ExactBoxType& domain,
+                    const List<ValidatedConstraint>& constraints) const;
 
     //! \brief Solve using dynamic workload processing.
     //! \details The actual concurrency is controlled by ThreadManager.
-    SmtResult solve_parallel(ExactBoxType const& domain,
-                             List<ValidatedConstraint> const& constraints) const;
+    SmtResult solve_parallel(const ExactBoxType& domain,
+                             const List<ValidatedConstraint>& constraints) const;
 
     //! \brief Solve a conjunction of normalized real theory primitives.
-    SmtResult solve(RealSpace const& space,
-                    ExactBoxType const& domain,
-                    List<SmtTheoryPrimitiveLiteral> const& literals) const;
+    SmtResult solve(const RealSpace& space,
+                    const ExactBoxType& domain,
+                    const List<SmtTheoryPrimitiveLiteral>& literals) const;
 
     //! \brief Solve normalized theory primitives using Threading.
-    SmtResult solve_parallel(RealSpace const& space,
-                             ExactBoxType const& domain,
-                             List<SmtTheoryPrimitiveLiteral> const& literals) const;
+    SmtResult solve_parallel(const RealSpace& space,
+                             const ExactBoxType& domain,
+                             const List<SmtTheoryPrimitiveLiteral>& literals) const;
 
     //! \brief Solve a bounded Boolean combination of real predicates.
-    SmtResult solve(RealSpace const& space,
-                    ExactBoxType const& domain,
-                    ContinuousPredicate const& predicate) const;
+    SmtResult solve(const RealSpace& space,
+                    const ExactBoxType& domain,
+                    const ContinuousPredicate& predicate) const;
 
     //! \brief Solve a bounded Boolean combination using parallel theory search.
-    SmtResult solve_parallel(RealSpace const& space,
-                             ExactBoxType const& domain,
-                             ContinuousPredicate const& predicate) const;
+    SmtResult solve_parallel(const RealSpace& space,
+                             const ExactBoxType& domain,
+                             const ContinuousPredicate& predicate) const;
 
-    SmtSolverConfiguration const& configuration() const { return _configuration; }
+    const SmtSolverConfiguration& configuration() const { return _configuration; }
 
   private:
     friend struct SmtParallelTask;
     friend ExactIntervalType SmtSolverTestSupport::original_bounds(
-        SmtSolver const&, SmtTheoryPrimitiveRelation);
+        const SmtSolver&, SmtTheoryPrimitiveRelation);
     friend Bool SmtSolverTestSupport::epsilon_satisfied(
-        SmtSolver const&, UpperBoxType const&, List<ValidatedConstraint> const&);
+        const SmtSolver&, const UpperBoxType&, const List<ValidatedConstraint>&);
     friend Bool SmtSolverTestSupport::epsilon_satisfied(
-        SmtSolver const&, RealSpace const&, UpperBoxType const&,
-        List<SmtTheoryPrimitiveLiteral> const&);
+        const SmtSolver&, const RealSpace&, const UpperBoxType&,
+        const List<SmtTheoryPrimitiveLiteral>&);
     friend SizeType SmtSolverTestSupport::compiled_theory_derivative_count(
-        SmtSolver const&, RealSpace const&,
-        List<SmtTheoryPrimitiveLiteral> const&);
+        const SmtSolver&, const RealSpace&,
+        const List<SmtTheoryPrimitiveLiteral>&);
     friend SizeType SmtSolverTestSupport::interval_newton_subsystem_candidate_count(
-        SmtSolver const&, RealSpace const&,
-        List<SmtTheoryPrimitiveLiteral> const&);
+        const SmtSolver&, const RealSpace&,
+        const List<SmtTheoryPrimitiveLiteral>&);
     friend SmtSolverTestSupport::DirectBoxProcessingObservation
         SmtSolverTestSupport::process_compiled_box(
-            SmtSolver const&, RealSpace const&, UpperBoxType const&,
-            List<SmtTheoryPrimitiveLiteral> const&);
-    using BoxProcessingStatus=SmtSolverTestSupport::BoxProcessingStatus;
+            const SmtSolver&, const RealSpace&, const UpperBoxType&,
+            const List<SmtTheoryPrimitiveLiteral>&);
+    using BoxProcessingStatus = SmtSolverTestSupport::BoxProcessingStatus;
 
     /** @brief ReductionStatistics represents an SMT search component. */
     struct ReductionStatistics {
@@ -666,7 +667,7 @@ class SmtSolver {
     struct BoxProcessingResult {
         BoxProcessingStatus status;
         std::optional<UpperBoxType> witness;
-        std::optional<Pair<UpperBoxType,UpperBoxType>> children;
+        std::optional<Pair<UpperBoxType, UpperBoxType>> children;
         ReductionStatistics reductions;
         Bool sensitivity_guided_split = false;
         Bool sensitivity_overrode_geometric_split = false;
@@ -702,64 +703,64 @@ class SmtSolver {
 
     /** @brief ConjunctionReference represents an SMT search component. */
     struct ConjunctionReference {
-        List<ValidatedConstraint> const* constraints;
-        CompiledTheoryLiterals const* theory_literals;
+        const List<ValidatedConstraint>* constraints;
+        const CompiledTheoryLiterals* theory_literals;
 
-        explicit ConjunctionReference(List<ValidatedConstraint> const& conjunction)
-            : constraints(&conjunction), theory_literals(nullptr) { }
+        explicit ConjunctionReference(const List<ValidatedConstraint>& conjunction)
+            : constraints(&conjunction), theory_literals(nullptr) {}
 
-        explicit ConjunctionReference(CompiledTheoryLiterals const& conjunction)
-            : constraints(nullptr), theory_literals(&conjunction) { }
+        explicit ConjunctionReference(const CompiledTheoryLiterals& conjunction)
+            : constraints(nullptr), theory_literals(&conjunction) {}
     };
 
     template<class Conjunction>
     BoxProcessingResult _process_box(
         UpperBoxType domain,
-        Conjunction const& conjunction,
-        Bool allow_preclassification=true) const;
+        const Conjunction& conjunction,
+        Bool allow_preclassification = true) const;
 
     BoxProcessingResult _process_box(
         UpperBoxType domain,
-        ConjunctionReference const& conjunction,
-        Bool allow_preclassification=true) const;
+        const ConjunctionReference& conjunction,
+        Bool allow_preclassification = true) const;
 
     Bool _preclassification_eligible(
-        UpperBoxType const& domain,
-        ConjunctionReference const& conjunction) const;
+        const UpperBoxType& domain,
+        const ConjunctionReference& conjunction) const;
 
     Void _accumulate_box_processing_statistics(
         SmtSearchStatistics& statistics,
-        BoxProcessingResult const& processing) const;
+        const BoxProcessingResult& processing) const;
 
     SmtResult _solve_sequential_conjunction(
-        ExactBoxType const& domain,
-        ConjunctionReference const& conjunction) const;
+        const ExactBoxType& domain,
+        const ConjunctionReference& conjunction) const;
 
     SmtResult _solve_parallel_conjunction(
-        ExactBoxType const& domain,
-        ConjunctionReference const& conjunction) const;
+        const ExactBoxType& domain,
+        const ConjunctionReference& conjunction) const;
 
     ExactIntervalType _original_bounds(SmtTheoryPrimitiveRelation relation) const;
-    ExactIntervalType _epsilon_bounds(ValidatedConstraint const& constraint) const;
-    ExactIntervalType _epsilon_bounds(CompiledTheoryLiteral const& literal) const;
+    ExactIntervalType _epsilon_bounds(const ValidatedConstraint& constraint) const;
+    ExactIntervalType _epsilon_bounds(const CompiledTheoryLiteral& literal) const;
     Bool _original_reduce(UpperBoxType& domain,
-                          List<ValidatedConstraint> const& constraints,
+                          const List<ValidatedConstraint>& constraints,
                           ReductionStatistics& statistics) const;
-    Bool _epsilon_satisfied(UpperBoxType const& domain,
-                            ValidatedConstraint const& constraint) const;
-    Bool _epsilon_satisfied(UpperBoxType const& domain,
-                            List<ValidatedConstraint> const& constraints) const;
+    Bool _epsilon_satisfied(const UpperBoxType& domain,
+                            const ValidatedConstraint& constraint) const;
+    Bool _epsilon_satisfied(const UpperBoxType& domain,
+                            const List<ValidatedConstraint>& constraints) const;
 
     CompiledTheoryLiterals _compile_theory_literals(
-        RealSpace const& space,
-        List<SmtTheoryPrimitiveLiteral> const& literals) const;
+        const RealSpace& space,
+        const List<SmtTheoryPrimitiveLiteral>& literals) const;
     Bool _original_reduce(UpperBoxType& domain,
-                          CompiledTheoryLiterals const& literals,
+                          const CompiledTheoryLiterals& literals,
                           ReductionStatistics& statistics) const;
-    Bool _epsilon_satisfied(UpperBoxType const& domain,
-                            CompiledTheoryLiteral const& literal) const;
-    Bool _epsilon_satisfied(UpperBoxType const& domain,
-                            CompiledTheoryLiterals const& literals) const;
+    Bool _epsilon_satisfied(const UpperBoxType& domain,
+                            const CompiledTheoryLiteral& literal) const;
+    Bool _epsilon_satisfied(const UpperBoxType& domain,
+                            const CompiledTheoryLiterals& literals) const;
 
     /** @brief DirectClassification represents an SMT search component. */
     struct DirectClassification {
@@ -772,28 +773,28 @@ class SmtSolver {
     };
 
     DirectClassification _direct_classification(
-        UpperBoxType const& domain,
-        List<ValidatedConstraint> const& constraints,
+        const UpperBoxType& domain,
+        const List<ValidatedConstraint>& constraints,
         ReductionStatistics& statistics,
         Bool allow_preclassification) const;
     DirectClassification _direct_classification(
-        UpperBoxType const& domain,
-        CompiledTheoryLiterals const& literals,
+        const UpperBoxType& domain,
+        const CompiledTheoryLiterals& literals,
         ReductionStatistics& statistics,
         Bool allow_preclassification) const;
 
     template<class Conjunction>
     std::optional<UpperBoxType> _epsilon_witness(
-        UpperBoxType const& domain,
-        Conjunction const& conjunction) const;
+        const UpperBoxType& domain,
+        const Conjunction& conjunction) const;
 
     template<class Conjunction>
     UpperBoxType _epsilon_candidate_witness(
-        UpperBoxType const& domain,
-        Conjunction const& conjunction) const;
+        const UpperBoxType& domain,
+        const Conjunction& conjunction) const;
     /** @brief SplitBoxResult represents an SMT search component. */
     struct SplitBoxResult {
-        Pair<UpperBoxType,UpperBoxType> children;
+        Pair<UpperBoxType, UpperBoxType> children;
         Bool sensitivity_guided = false;
         Bool sensitivity_overrode_geometric = false;
         Bool interval_lookahead_guided = false;
@@ -804,18 +805,17 @@ class SmtSolver {
 
     template<class Conjunction>
     SplitBoxResult _split_box(
-        UpperBoxType const& domain,
-        Conjunction const& conjunction,
+        const UpperBoxType& domain,
+        const Conjunction& conjunction,
         SizeType& derivatives_built,
         SizeType& derivative_evaluations,
         double& derivative_build_seconds,
         double& derivative_evaluation_seconds) const;
 
-    ValidatedScalarMultivariateFunction const& _function(
-        ValidatedConstraint const& constraint) const;
-    ValidatedScalarMultivariateFunction const& _function(
-        CompiledTheoryLiteral const& literal) const;
-
+    const ValidatedScalarMultivariateFunction& _function(
+        const ValidatedConstraint& constraint) const;
+    const ValidatedScalarMultivariateFunction& _function(
+        const CompiledTheoryLiteral& literal) const;
 
     SmtSolverConfiguration _configuration;
 };

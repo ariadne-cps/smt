@@ -31,10 +31,10 @@
 
 #include <vector>
 
-#include "numeric/numeric.hpp"
-#include "symbolic/expression.hpp"
-#include "smt/smt_theory.hpp"
 #include "cdcl/boolean_literal.hpp"
+#include "numeric/numeric.hpp"
+#include "smt/smt_theory.hpp"
+#include "symbolic/expression.hpp"
 
 namespace Ariadne {
 
@@ -58,11 +58,11 @@ class SmtBooleanEncoding {
     using Literal = BooleanLiteral;
     using Clause = std::vector<Literal>;
 
-    std::vector<Clause> const& clauses() const { return _clauses; }
+    const std::vector<Clause>& clauses() const { return _clauses; }
     SizeType variable_count() const { return _variable_count; }
     SizeType atom_count() const { return _atoms.size(); }
 
-    ContinuousPredicate const& atom(SizeType i) const { return _atoms[i]; }
+    const ContinuousPredicate& atom(SizeType i) const { return _atoms[i]; }
     //! \brief Zero-based Boolean variable index for theory atom i.
     SizeType atom_variable(SizeType i) const { return _atom_variables[i]; }
 
@@ -76,7 +76,7 @@ class SmtBooleanEncoding {
         ++_variable_count;
         return result;
     }
-    Void _add_atom(ContinuousPredicate const& atom, SizeType variable) {
+    Void _add_atom(const ContinuousPredicate& atom, SizeType variable) {
         _atoms.push_back(atom);
         _atom_variables.push_back(variable);
     }
@@ -91,7 +91,7 @@ class SmtBooleanEncoding {
 //! \brief Encode AND/OR/NOT combinations of real comparisons into CNF.
 class SmtBooleanEncoder {
   public:
-    SmtBooleanEncoding encode(ContinuousPredicate const& predicate) const;
+    SmtBooleanEncoding encode(const ContinuousPredicate& predicate) const;
 };
 
 } // namespace Ariadne

@@ -27,50 +27,36 @@
  */
 
 #include <algorithm>
-#include <optional>
-#include <vector>
-#include "threading/thread_manager.hpp"
-#include "threading/threading_command_line_interface.hpp"
-#include "ariadne-benchmarking.hpp"
 #include <chrono>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "function/function.hpp"
 #include "function/procedure.hpp"
 #include "geometry/box.hpp"
+#include "smt/smt_solver.hpp"
+#include "threading/thread_manager.hpp"
+#include "threading/threading_command_line_interface.hpp"
+
+#include "ariadne-benchmarking.hpp"
 #include "constraint-solving/constraint_solver.hpp"
 #include "equation-solving/interval_newton_method.hpp"
-#include "smt/smt_solver.hpp"
 
 using namespace Ariadne;
-namespace Bench=Ariadne::Benchmarking;
+namespace Bench = Ariadne::Benchmarking;
 
 namespace {
 
-String mode_from_argument(Int argc,const char* argv[])
-{
-    if(argc<=1) { return "contract"; }
-    String const mode(argv[1]);
-    if(mode=="contract" || mode=="infeasible" || mode=="singular"
-       || mode=="smt-contract" || mode=="smt-infeasible"
-       || mode=="smt-singular" || mode=="smt-mixed-contract"
-       || mode=="smt-overdetermined-infeasible"
-       || mode=="smt-underdetermined"
-       || mode=="smt-first-subsystem-singular"
-       || mode=="smt-boolean-contract"
-       || mode=="smt-search-compare"
-       || mode=="smt-search-compare-wide"
-       || mode=="smt-search-compare-4d"
-       || mode=="smt-search-compare-4d-propagation"
-       || mode=="smt-search-compare-2d-propagation"
-       || mode=="smt-search-compare-3d-propagation"
-       || mode=="smt-search-compare-3d-coupled"
-       || mode=="smt-search-compare-2d-coupled"
-       || mode=="smt-staged-2d-coupled"
-       || mode=="smt-search-repeat-2d-coupled") {
+String mode_from_argument(Int argc, const char* argv[]) {
+    if (argc <= 1) {
+        return "contract";
+    }
+    const String mode(argv[1]);
+    if (mode == "contract" || mode == "infeasible" || mode == "singular" || mode == "smt-contract" || mode == "smt-infeasible" || mode == "smt-singular" || mode == "smt-mixed-contract" || mode == "smt-overdetermined-infeasible" || mode == "smt-underdetermined" || mode == "smt-first-subsystem-singular" || mode == "smt-boolean-contract" || mode == "smt-search-compare" || mode == "smt-search-compare-wide" || mode == "smt-search-compare-4d" || mode == "smt-search-compare-4d-propagation" || mode == "smt-search-compare-2d-propagation" || mode == "smt-search-compare-3d-propagation" || mode == "smt-search-compare-3d-coupled" || mode == "smt-search-compare-2d-coupled" || mode == "smt-staged-2d-coupled" || mode == "smt-search-repeat-2d-coupled") {
         return mode;
     }
     throw std::runtime_error(
@@ -85,96 +71,227 @@ String mode_from_argument(Int argc,const char* argv[])
         "smt-search-repeat-2d-coupled]");
 }
 
-double elapsed_seconds(std::chrono::steady_clock::time_point const& start)
-{
+double elapsed_seconds(const std::chrono::steady_clock::time_point& start) {
     return std::chrono::duration<double>(
-        std::chrono::steady_clock::now()-start).count();
+               std::chrono::steady_clock::now() - start)
+        .count();
 }
 
-double width_sum(Vector<EquationSolverInterface::ValidatedNumericType> const& box)
-{
-    double result=0.0;
-    for(SizeType i=0u;i!=box.size();++i) {
-        result+=box[i].upper().raw().get_d()-box[i].lower().raw().get_d();
+double width_sum(const Vector<EquationSolverInterface::ValidatedNumericType>& box) {
+    double result = 0.0;
+    for (SizeType i = 0u; i != box.size(); ++i) {
+        result += box[i].upper().raw().get_d() - box[i].lower().raw().get_d();
     }
     return result;
 }
 
 } // namespace
 
-Int main(Int argc,const char* argv[])
-{
+Int main(Int argc, const char* argv[]) {
     try {
-    Int const positional_end=(argc>1 && argv[1][0]!='-') ? 2 : 1;
-    String const mode=mode_from_argument(positional_end,argv);
-    unsigned measured_runs=101u;
-    Bench::CommandLine cli;
-    ThreadManager::instance();
-    cli.add(threading_command_line_contribution());
-    cli.add(CommandLineContribution("smt-interval-newton-benchmark", {
-        make_valued_argument_parser("", "samples",
-            "Measured repeats in smt-search-repeat-2d-coupled (default: 101)",
-            [&measured_runs](String const& value)->VoidFunction {
-                unsigned const parsed=Bench::parse_unsigned<unsigned>(value);
-                if(parsed==0u)
-                    throw std::invalid_argument("samples must be positive");
-                return [&measured_runs,parsed] { measured_runs=parsed; };
-            })
-    }));
-    std::vector<char const*> cli_args{argv[0]};
-    for(Int i=positional_end;i<argc;++i) cli_args.push_back(argv[i]);
-    if(not cli.acquire(static_cast<int>(cli_args.size()),cli_args.data()))
-        return 0;
-    bool warmups_overridden=false;
-    for(Int i=positional_end;i<argc;++i) {
-        std::string const arg(argv[i]);
-        if(arg=="--warmups" || arg.rfind("--warmups=",0u)==0u)
-            warmups_overridden=true;
-    }
-    unsigned const repeat_warmups=warmups_overridden ? cli.warmups() : 10u;
+        const Int positional_end = (argc > 1 && argv[1][0] != '-') ? 2 : 1;
+        const String mode = mode_from_argument(positional_end, argv);
+        unsigned measured_runs = 101u;
+        Bench::CommandLine cli;
+        ThreadManager::instance();
+        cli.add(threading_command_line_contribution());
+        cli.add(CommandLineContribution("smt-interval-newton-benchmark", {make_valued_argument_parser("", "samples",
+                                                                                                      "Measured repeats in smt-search-repeat-2d-coupled (default: 101)",
+                                                                                                      [&measured_runs](const String& value) -> VoidFunction {
+                                                                                                          const unsigned parsed = Bench::parse_unsigned<unsigned>(value);
+                                                                                                          if (parsed == 0u)
+                                                                                                              throw std::invalid_argument("samples must be positive");
+                                                                                                          return [&measured_runs, parsed] { measured_runs = parsed; };
+                                                                                                      })}));
+        std::vector<const char*> cli_args{argv[0]};
+        for (Int i = positional_end; i < argc; ++i)
+            cli_args.push_back(argv[i]);
+        if (not cli.acquire(static_cast<int>(cli_args.size()), cli_args.data()))
+            return 0;
+        bool warmups_overridden = false;
+        for (Int i = positional_end; i < argc; ++i) {
+            const std::string arg(argv[i]);
+            if (arg == "--warmups" || arg.rfind("--warmups=", 0u) == 0u)
+                warmups_overridden = true;
+        }
+        const unsigned repeat_warmups = warmups_overridden ? cli.warmups() : 10u;
 
-    if(mode=="smt-search-repeat-2d-coupled") {
-        RealVariable x0("newton_2d_repeat_x0");
-        RealVariable x1("newton_2d_repeat_x1");
-        RealExpression e0=x0, e1=x1;
-        RealSpace space({x0,x1});
-        List<SmtTheoryPrimitiveLiteral> literals({
-            SmtTheoryPrimitiveLiteral(
-                e0*e1-0.12_x,
-                SmtTheoryPrimitiveRelation::EQ_ZERO),
-            SmtTheoryPrimitiveLiteral(
-                e0+e1-0.7_x,
-                SmtTheoryPrimitiveRelation::EQ_ZERO)
-        });
-        ExactBoxType domain({
-            ExactIntervalType(0.36_x,0.8_x),
-            ExactIntervalType(0.15_x,0.34_x)
-        });
+        if (mode == "smt-search-repeat-2d-coupled") {
+            RealVariable x0("newton_2d_repeat_x0");
+            RealVariable x1("newton_2d_repeat_x1");
+            RealExpression e0 = x0, e1 = x1;
+            RealSpace space({x0, x1});
+            List<SmtTheoryPrimitiveLiteral> literals({SmtTheoryPrimitiveLiteral(
+                                                          e0 * e1 - 0.12_x,
+                                                          SmtTheoryPrimitiveRelation::EQ_ZERO),
+                                                      SmtTheoryPrimitiveLiteral(
+                                                          e0 + e1 - 0.7_x,
+                                                          SmtTheoryPrimitiveRelation::EQ_ZERO)});
+            ExactBoxType domain({ExactIntervalType(0.36_x, 0.8_x),
+                                 ExactIntervalType(0.15_x, 0.34_x)});
 
-        Bench::Runner runner(repeat_warmups,2u);
-        Bench::Report report("SMT interval Newton 2D coupled (nanoseconds)",
-                             cli.summary_fields());
-        report.set_dimension_columns({
-            {"Variant"},{"Dimension",0u,Bench::TableAlignment::Right},
-            {"Family"},{"Phase"}
-        });
-        report.set_table_options(Bench::TableOptions::ruled());
-        report.set_parameter_header(
-            "Solver constructed outside timing. One sample times solve(); "
-            "Newton internal phase is reported separately.");
+            Bench::Runner runner(repeat_warmups, 2u);
+            Bench::Report report("SMT interval Newton 2D coupled (nanoseconds)",
+                                 cli.summary_fields());
+            report.set_dimension_columns({
+                {"Variant"},
+                {"Dimension", 0u, Bench::TableAlignment::Right},
+                {"Family"},
+                {"Phase"}
+            });
+            report.set_table_options(Bench::TableOptions::ruled());
+            report.set_parameter_header(
+                "Solver constructed outside timing. One sample times solve(); "
+                "Newton internal phase is reported separately.");
 
-        auto run=[&](Bool interval_newton_enabled,char const* label) {
-            std::optional<SmtSolver> solver;
-            std::optional<SmtResult> result;
-            SmtSearchStatistics last_statistics;
-            Bench::Samples newton_samples;
-            unsigned repeat_round=0u;
-            Bench::Samples const samples=runner.run(
-                std::string("2d-coupled/")+label,measured_runs,
-                [&] {
-                    result.reset();
-                    solver.reset();
-                solver.emplace(SmtSolverConfiguration(
+            auto run = [&](Bool interval_newton_enabled, const char* label) {
+                std::optional<SmtSolver> solver;
+                std::optional<SmtResult> result;
+                SmtSearchStatistics last_statistics;
+                Bench::Samples newton_samples;
+                unsigned repeat_round = 0u;
+                const Bench::Samples samples = runner.run(
+                    std::string("2d-coupled/") + label, measured_runs,
+                    [&] {
+                        result.reset();
+                        solver.reset();
+                        solver.emplace(SmtSolverConfiguration(
+                            1e-5_x,
+                            std::numeric_limits<SizeType>::max(),
+                            std::numeric_limits<SizeType>::max(),
+                            4096u,
+                            false,
+                            false,
+                            false,
+                            false,
+                            true,
+                            true,
+                            false,
+                            false,
+                            interval_newton_enabled));
+                    },
+                    [&] { result.emplace(solver->solve(space, domain, literals)); },
+                    [&] {
+                        if (not result)
+                            throw std::runtime_error("missing SMT repeat result");
+                        if (repeat_round++ >= repeat_warmups)
+                            newton_samples.add(
+                                result->statistics().interval_newton_seconds * 1e9);
+                        last_statistics = result->statistics();
+                    });
+                const Bench::Statistics stats = Bench::summarize(samples);
+                const Bench::Statistics newton_stats = Bench::summarize(newton_samples);
+                report.add_row({label, "2", "coupled", "solve"}, stats);
+                report.add_row({label, "2", "coupled", "interval-newton"}, newton_stats);
+                std::cout << "[smt-interval-newton-repeat]"
+                          << " variant=" << label
+                          << " dimension=2"
+                          << " family=coupled"
+                          << " propagation=enabled"
+                          << " runs=" << measured_runs
+                          << " median-time=" << stats.median / 1e9
+                          << " mean-time=" << stats.mean / 1e9
+                          << " min-time=" << stats.minimum / 1e9
+                          << " max-time=" << stats.maximum / 1e9
+                          << " boxes=" << last_statistics.boxes_processed
+                          << " split=" << last_statistics.boxes_split
+                          << " hull-rounds=" << last_statistics.hull_reduction_rounds
+                          << " hull-effective="
+                          << last_statistics.hull_effective_reductions
+                          << " newton-attempts="
+                          << last_statistics.interval_newton_attempts
+                          << " newton-effective="
+                          << last_statistics.interval_newton_effective_reductions
+                          << " median-newton-time=" << newton_stats.median / 1e9
+                          << std::endl;
+            };
+
+            run(false, "baseline");
+            run(true, "newton");
+            report.print();
+            return 0;
+        }
+
+        if (mode == "smt-staged-2d-coupled") {
+            auto coordinates = ValidatedScalarMultivariateFunction::coordinates(2u);
+            const auto f0 = coordinates[0u] * coordinates[1u] - 0.12_x;
+            const auto f1 = coordinates[0u] + coordinates[1u] - 0.7_x;
+            ValidatedProcedure p0(f0);
+            ValidatedProcedure p1(f1);
+            const ExactIntervalType zero(0, 0);
+            const ExactBoxType initial_exact({ExactIntervalType(0.36_x, 0.8_x),
+                                              ExactIntervalType(0.15_x, 0.34_x)});
+            ValidatedVectorMultivariateFunction newton_function(
+                List<ValidatedScalarMultivariateFunction>({f0, f1}));
+            ConstraintSolver contractor;
+            IntervalNewtonSolver newton_solver(1e-12, 1u);
+            const std::vector<SizeType> stages({0u, 1u, 2u, 4u, 8u, 16u, 32u});
+
+            for (SizeType stage: stages) {
+                UpperBoxType domain = initial_exact;
+                SizeType completed = 0u;
+                Bool empty = false;
+                for (; completed < stage && not empty; ++completed) {
+                    empty = contractor.hull_reduce(domain, p0, zero);
+                    if (not empty) {
+                        empty = contractor.hull_reduce(domain, p1, zero);
+                    }
+                }
+
+                Vector<EquationSolverInterface::ValidatedNumericType> current =
+                    cast_singleton(cast_exact_box(domain));
+                const double before_newton_width = width_sum(current);
+                Bool singular = false;
+                Bool disjoint = false;
+                Bool effective = false;
+                double after_newton_width = before_newton_width;
+                const auto start = std::chrono::steady_clock::now();
+                try {
+                    auto image = newton_solver.step(newton_function, current);
+                    disjoint = not consistent(image, current);
+                    if (disjoint) {
+                        effective = true;
+                        after_newton_width = 0.0;
+                    } else {
+                        auto contracted = refinement(image, current);
+                        after_newton_width = width_sum(contracted);
+                        effective = after_newton_width < before_newton_width;
+                    }
+                } catch (const SingularMatrixException&) {
+                    singular = true;
+                }
+                const double newton_seconds = elapsed_seconds(start);
+
+                std::cout << "[smt-interval-newton-staged]"
+                          << " hull-sweeps=" << completed
+                          << " empty-before-newton=" << empty
+                          << " width-before-newton=" << before_newton_width
+                          << " newton-effective=" << effective
+                          << " newton-disjoint=" << disjoint
+                          << " newton-singular=" << singular
+                          << " width-after-newton=" << after_newton_width
+                          << " newton-time=" << newton_seconds
+                          << std::endl;
+            }
+            return 0;
+        }
+
+        if (mode == "smt-search-compare-2d-coupled") {
+            RealVariable x0("newton_2d_coupled_x0");
+            RealVariable x1("newton_2d_coupled_x1");
+            RealExpression e0 = x0, e1 = x1;
+            RealSpace space({x0, x1});
+            List<SmtTheoryPrimitiveLiteral> literals({SmtTheoryPrimitiveLiteral(
+                                                          e0 * e1 - 0.12_x,
+                                                          SmtTheoryPrimitiveRelation::EQ_ZERO),
+                                                      SmtTheoryPrimitiveLiteral(
+                                                          e0 + e1 - 0.7_x,
+                                                          SmtTheoryPrimitiveRelation::EQ_ZERO)});
+            ExactBoxType domain({ExactIntervalType(0.36_x, 0.8_x),
+                                 ExactIntervalType(0.15_x, 0.34_x)});
+
+            auto run = [&](Bool interval_newton_enabled, const String& label) {
+                SmtSolver solver(SmtSolverConfiguration(
                     1e-5_x,
                     std::numeric_limits<SizeType>::max(),
                     std::numeric_limits<SizeType>::max(),
@@ -188,914 +305,728 @@ Int main(Int argc,const char* argv[])
                     false,
                     false,
                     interval_newton_enabled));
-                },
-                [&] { result.emplace(solver->solve(space,domain,literals)); },
-                [&] {
-                    if(not result)
-                        throw std::runtime_error("missing SMT repeat result");
-                    if(repeat_round++>=repeat_warmups)
-                        newton_samples.add(
-                            result->statistics().interval_newton_seconds*1e9);
-                    last_statistics=result->statistics();
-                });
-            Bench::Statistics const stats=Bench::summarize(samples);
-            Bench::Statistics const newton_stats=Bench::summarize(newton_samples);
-            report.add_row({label,"2","coupled","solve"},stats);
-            report.add_row({label,"2","coupled","interval-newton"},newton_stats);
-            std::cout << "[smt-interval-newton-repeat]"
-                      << " variant=" << label
-                      << " dimension=2"
-                      << " family=coupled"
-                      << " propagation=enabled"
-                      << " runs=" << measured_runs
-                      << " median-time=" << stats.median/1e9
-                      << " mean-time=" << stats.mean/1e9
-                      << " min-time=" << stats.minimum/1e9
-                      << " max-time=" << stats.maximum/1e9
-                      << " boxes=" << last_statistics.boxes_processed
-                      << " split=" << last_statistics.boxes_split
-                      << " hull-rounds=" << last_statistics.hull_reduction_rounds
-                      << " hull-effective="
-                      << last_statistics.hull_effective_reductions
-                      << " newton-attempts="
-                      << last_statistics.interval_newton_attempts
-                      << " newton-effective="
-                      << last_statistics.interval_newton_effective_reductions
-                      << " median-newton-time=" << newton_stats.median/1e9
-                      << std::endl;
-        };
 
-        run(false,"baseline");
-        run(true,"newton");
-        report.print();
-        return 0;
-    }
+                const auto start = std::chrono::steady_clock::now();
+                SmtResult result = solver.solve(space, domain, literals);
+                const double seconds = elapsed_seconds(start);
+                const auto& statistics = result.statistics();
 
-    if(mode=="smt-staged-2d-coupled") {
-        auto coordinates=ValidatedScalarMultivariateFunction::coordinates(2u);
-        auto const f0=coordinates[0u]*coordinates[1u]-0.12_x;
-        auto const f1=coordinates[0u]+coordinates[1u]-0.7_x;
-        ValidatedProcedure p0(f0);
-        ValidatedProcedure p1(f1);
-        ExactIntervalType const zero(0,0);
-        ExactBoxType const initial_exact({
-            ExactIntervalType(0.36_x,0.8_x),
-            ExactIntervalType(0.15_x,0.34_x)
-        });
-        ValidatedVectorMultivariateFunction newton_function(
-            List<ValidatedScalarMultivariateFunction>({f0,f1}));
-        ConstraintSolver contractor;
-        IntervalNewtonSolver newton_solver(1e-12,1u);
-        std::vector<SizeType> const stages({0u,1u,2u,4u,8u,16u,32u});
-
-        for(SizeType stage:stages) {
-            UpperBoxType domain=initial_exact;
-            SizeType completed=0u;
-            Bool empty=false;
-            for(;completed<stage && not empty;++completed) {
-                empty=contractor.hull_reduce(domain,p0,zero);
-                if(not empty) {
-                    empty=contractor.hull_reduce(domain,p1,zero);
+                std::cout << "[smt-interval-newton-search]"
+                          << " variant=" << label
+                          << " dimension=2"
+                          << " propagation=enabled"
+                          << " family=coupled"
+                          << " status=" << result.status();
+                if (result.is_unknown()) {
+                    std::cout << " reason=" << result.unknown_reason();
                 }
-            }
+                std::cout << " time=" << seconds
+                          << " boxes=" << statistics.boxes_processed
+                          << " pruned=" << statistics.boxes_pruned
+                          << " split=" << statistics.boxes_split
+                          << " epsilon-certified="
+                          << statistics.epsilon_box_certifications
+                          << " hull-rounds="
+                          << statistics.hull_reduction_rounds
+                          << " hull-effective="
+                          << statistics.hull_effective_reductions
+                          << " shaving-rounds="
+                          << statistics.shaving_reduction_rounds
+                          << " shaving-effective="
+                          << statistics.shaving_effective_reductions
+                          << " newton-attempts="
+                          << statistics.interval_newton_attempts
+                          << " newton-effective="
+                          << statistics.interval_newton_effective_reductions
+                          << " newton-infeasible="
+                          << statistics.interval_newton_infeasible
+                          << " newton-singular="
+                          << statistics.interval_newton_singular
+                          << " newton-time="
+                          << statistics.interval_newton_seconds
+                          << std::endl;
+            };
 
-            Vector<EquationSolverInterface::ValidatedNumericType> current=
-                cast_singleton(cast_exact_box(domain));
-            double const before_newton_width=width_sum(current);
-            Bool singular=false;
-            Bool disjoint=false;
-            Bool effective=false;
-            double after_newton_width=before_newton_width;
-            auto const start=std::chrono::steady_clock::now();
-            try {
-                auto image=newton_solver.step(newton_function,current);
-                disjoint=not consistent(image,current);
-                if(disjoint) {
-                    effective=true;
-                    after_newton_width=0.0;
-                } else {
-                    auto contracted=refinement(image,current);
-                    after_newton_width=width_sum(contracted);
-                    effective=after_newton_width<before_newton_width;
+            run(false, "baseline");
+            run(true, "newton");
+            return 0;
+        }
+
+        if (mode == "smt-search-compare-3d-coupled") {
+            RealVariable x0("newton_3d_coupled_x0");
+            RealVariable x1("newton_3d_coupled_x1");
+            RealVariable x2("newton_3d_coupled_x2");
+            RealExpression e0 = x0, e1 = x1, e2 = x2;
+            RealSpace space({x0, x1, x2});
+            List<SmtTheoryPrimitiveLiteral> literals({SmtTheoryPrimitiveLiteral(
+                                                          e0 * e1 - 0.12_x,
+                                                          SmtTheoryPrimitiveRelation::EQ_ZERO),
+                                                      SmtTheoryPrimitiveLiteral(
+                                                          e1 * e2 - 0.15_x,
+                                                          SmtTheoryPrimitiveRelation::EQ_ZERO),
+                                                      SmtTheoryPrimitiveLiteral(
+                                                          e0 + e1 + e2 - 1.2_x,
+                                                          SmtTheoryPrimitiveRelation::EQ_ZERO)});
+            ExactBoxType domain({ExactIntervalType(0.25_x, 0.55_x),
+                                 ExactIntervalType(0.2_x, 0.4_x),
+                                 ExactIntervalType(0.4_x, 0.6_x)});
+
+            auto run = [&](Bool interval_newton_enabled, const String& label) {
+                SmtSolver solver(SmtSolverConfiguration(
+                    1e-5_x,
+                    std::numeric_limits<SizeType>::max(),
+                    std::numeric_limits<SizeType>::max(),
+                    16384u,
+                    false,
+                    false,
+                    false,
+                    false,
+                    true,
+                    true,
+                    false,
+                    false,
+                    interval_newton_enabled));
+
+                const auto start = std::chrono::steady_clock::now();
+                SmtResult result = solver.solve(space, domain, literals);
+                const double seconds = elapsed_seconds(start);
+                const auto& statistics = result.statistics();
+
+                std::cout << "[smt-interval-newton-search]"
+                          << " variant=" << label
+                          << " dimension=3"
+                          << " propagation=enabled"
+                          << " family=coupled"
+                          << " status=" << result.status();
+                if (result.is_unknown()) {
+                    std::cout << " reason=" << result.unknown_reason();
                 }
-            }
-            catch(const SingularMatrixException&) {
-                singular=true;
-            }
-            double const newton_seconds=elapsed_seconds(start);
+                std::cout << " time=" << seconds
+                          << " boxes=" << statistics.boxes_processed
+                          << " pruned=" << statistics.boxes_pruned
+                          << " split=" << statistics.boxes_split
+                          << " epsilon-certified="
+                          << statistics.epsilon_box_certifications
+                          << " hull-rounds="
+                          << statistics.hull_reduction_rounds
+                          << " hull-effective="
+                          << statistics.hull_effective_reductions
+                          << " shaving-rounds="
+                          << statistics.shaving_reduction_rounds
+                          << " shaving-effective="
+                          << statistics.shaving_effective_reductions
+                          << " newton-attempts="
+                          << statistics.interval_newton_attempts
+                          << " newton-effective="
+                          << statistics.interval_newton_effective_reductions
+                          << " newton-infeasible="
+                          << statistics.interval_newton_infeasible
+                          << " newton-singular="
+                          << statistics.interval_newton_singular
+                          << " newton-time="
+                          << statistics.interval_newton_seconds
+                          << std::endl;
+            };
 
-            std::cout << "[smt-interval-newton-staged]"
-                      << " hull-sweeps=" << completed
-                      << " empty-before-newton=" << empty
-                      << " width-before-newton=" << before_newton_width
-                      << " newton-effective=" << effective
-                      << " newton-disjoint=" << disjoint
-                      << " newton-singular=" << singular
-                      << " width-after-newton=" << after_newton_width
-                      << " newton-time=" << newton_seconds
-                      << std::endl;
-        }
-        return 0;
-    }
-
-    if(mode=="smt-search-compare-2d-coupled") {
-        RealVariable x0("newton_2d_coupled_x0");
-        RealVariable x1("newton_2d_coupled_x1");
-        RealExpression e0=x0, e1=x1;
-        RealSpace space({x0,x1});
-        List<SmtTheoryPrimitiveLiteral> literals({
-            SmtTheoryPrimitiveLiteral(
-                e0*e1-0.12_x,
-                SmtTheoryPrimitiveRelation::EQ_ZERO),
-            SmtTheoryPrimitiveLiteral(
-                e0+e1-0.7_x,
-                SmtTheoryPrimitiveRelation::EQ_ZERO)
-        });
-        ExactBoxType domain({
-            ExactIntervalType(0.36_x,0.8_x),
-            ExactIntervalType(0.15_x,0.34_x)
-        });
-
-        auto run=[&](Bool interval_newton_enabled,String const& label) {
-            SmtSolver solver(SmtSolverConfiguration(
-                1e-5_x,
-                std::numeric_limits<SizeType>::max(),
-                std::numeric_limits<SizeType>::max(),
-                4096u,
-                false,
-                false,
-                false,
-                false,
-                true,
-                true,
-                false,
-                false,
-                interval_newton_enabled));
-
-            auto const start=std::chrono::steady_clock::now();
-            SmtResult result=solver.solve(space,domain,literals);
-            double const seconds=elapsed_seconds(start);
-            auto const& statistics=result.statistics();
-
-            std::cout << "[smt-interval-newton-search]"
-                      << " variant=" << label
-                      << " dimension=2"
-                      << " propagation=enabled"
-                      << " family=coupled"
-                      << " status=" << result.status();
-            if(result.is_unknown()) {
-                std::cout << " reason=" << result.unknown_reason();
-            }
-            std::cout << " time=" << seconds
-                      << " boxes=" << statistics.boxes_processed
-                      << " pruned=" << statistics.boxes_pruned
-                      << " split=" << statistics.boxes_split
-                      << " epsilon-certified="
-                      << statistics.epsilon_box_certifications
-                      << " hull-rounds="
-                      << statistics.hull_reduction_rounds
-                      << " hull-effective="
-                      << statistics.hull_effective_reductions
-                      << " shaving-rounds="
-                      << statistics.shaving_reduction_rounds
-                      << " shaving-effective="
-                      << statistics.shaving_effective_reductions
-                      << " newton-attempts="
-                      << statistics.interval_newton_attempts
-                      << " newton-effective="
-                      << statistics.interval_newton_effective_reductions
-                      << " newton-infeasible="
-                      << statistics.interval_newton_infeasible
-                      << " newton-singular="
-                      << statistics.interval_newton_singular
-                      << " newton-time="
-                      << statistics.interval_newton_seconds
-                      << std::endl;
-        };
-
-        run(false,"baseline");
-        run(true,"newton");
-        return 0;
-    }
-
-    if(mode=="smt-search-compare-3d-coupled") {
-        RealVariable x0("newton_3d_coupled_x0");
-        RealVariable x1("newton_3d_coupled_x1");
-        RealVariable x2("newton_3d_coupled_x2");
-        RealExpression e0=x0, e1=x1, e2=x2;
-        RealSpace space({x0,x1,x2});
-        List<SmtTheoryPrimitiveLiteral> literals({
-            SmtTheoryPrimitiveLiteral(
-                e0*e1-0.12_x,
-                SmtTheoryPrimitiveRelation::EQ_ZERO),
-            SmtTheoryPrimitiveLiteral(
-                e1*e2-0.15_x,
-                SmtTheoryPrimitiveRelation::EQ_ZERO),
-            SmtTheoryPrimitiveLiteral(
-                e0+e1+e2-1.2_x,
-                SmtTheoryPrimitiveRelation::EQ_ZERO)
-        });
-        ExactBoxType domain({
-            ExactIntervalType(0.25_x,0.55_x),
-            ExactIntervalType(0.2_x,0.4_x),
-            ExactIntervalType(0.4_x,0.6_x)
-        });
-
-        auto run=[&](Bool interval_newton_enabled,String const& label) {
-            SmtSolver solver(SmtSolverConfiguration(
-                1e-5_x,
-                std::numeric_limits<SizeType>::max(),
-                std::numeric_limits<SizeType>::max(),
-                16384u,
-                false,
-                false,
-                false,
-                false,
-                true,
-                true,
-                false,
-                false,
-                interval_newton_enabled));
-
-            auto const start=std::chrono::steady_clock::now();
-            SmtResult result=solver.solve(space,domain,literals);
-            double const seconds=elapsed_seconds(start);
-            auto const& statistics=result.statistics();
-
-            std::cout << "[smt-interval-newton-search]"
-                      << " variant=" << label
-                      << " dimension=3"
-                      << " propagation=enabled"
-                      << " family=coupled"
-                      << " status=" << result.status();
-            if(result.is_unknown()) {
-                std::cout << " reason=" << result.unknown_reason();
-            }
-            std::cout << " time=" << seconds
-                      << " boxes=" << statistics.boxes_processed
-                      << " pruned=" << statistics.boxes_pruned
-                      << " split=" << statistics.boxes_split
-                      << " epsilon-certified="
-                      << statistics.epsilon_box_certifications
-                      << " hull-rounds="
-                      << statistics.hull_reduction_rounds
-                      << " hull-effective="
-                      << statistics.hull_effective_reductions
-                      << " shaving-rounds="
-                      << statistics.shaving_reduction_rounds
-                      << " shaving-effective="
-                      << statistics.shaving_effective_reductions
-                      << " newton-attempts="
-                      << statistics.interval_newton_attempts
-                      << " newton-effective="
-                      << statistics.interval_newton_effective_reductions
-                      << " newton-infeasible="
-                      << statistics.interval_newton_infeasible
-                      << " newton-singular="
-                      << statistics.interval_newton_singular
-                      << " newton-time="
-                      << statistics.interval_newton_seconds
-                      << std::endl;
-        };
-
-        run(false,"baseline");
-        run(true,"newton");
-        return 0;
-    }
-
-    if(mode=="smt-search-compare-3d-propagation") {
-        RealVariable x0("newton_3d_prop_x0"), x1("newton_3d_prop_x1");
-        RealVariable x2("newton_3d_prop_x2");
-        RealExpression e0=x0, e1=x1, e2=x2;
-        RealSpace space({x0,x1,x2});
-        List<SmtTheoryPrimitiveLiteral> literals({
-            SmtTheoryPrimitiveLiteral(
-                sqr(e0)+sqr(e1)+sqr(e2)-1.5_x,
-                SmtTheoryPrimitiveRelation::EQ_ZERO),
-            SmtTheoryPrimitiveLiteral(
-                e0-e1,SmtTheoryPrimitiveRelation::EQ_ZERO),
-            SmtTheoryPrimitiveLiteral(
-                e1-e2,SmtTheoryPrimitiveRelation::EQ_ZERO)
-        });
-        ExactBoxType domain({
-            ExactIntervalType(0.5_x,1.0_x),
-            ExactIntervalType(0.5_x,1.0_x),
-            ExactIntervalType(0.5_x,1.0_x)
-        });
-
-        auto run=[&](Bool interval_newton_enabled,String const& label) {
-            SmtSolver solver(SmtSolverConfiguration(
-                1e-5_x,
-                std::numeric_limits<SizeType>::max(),
-                std::numeric_limits<SizeType>::max(),
-                16384u,
-                false,
-                false,
-                false,
-                false,
-                true,
-                true,
-                false,
-                false,
-                interval_newton_enabled));
-
-            auto const start=std::chrono::steady_clock::now();
-            SmtResult result=solver.solve(space,domain,literals);
-            double const seconds=elapsed_seconds(start);
-            auto const& statistics=result.statistics();
-
-            std::cout << "[smt-interval-newton-search]"
-                      << " variant=" << label
-                      << " dimension=3"
-                      << " propagation=enabled"
-                      << " status=" << result.status();
-            if(result.is_unknown()) {
-                std::cout << " reason=" << result.unknown_reason();
-            }
-            std::cout << " time=" << seconds
-                      << " boxes=" << statistics.boxes_processed
-                      << " pruned=" << statistics.boxes_pruned
-                      << " split=" << statistics.boxes_split
-                      << " epsilon-certified="
-                      << statistics.epsilon_box_certifications
-                      << " hull-rounds="
-                      << statistics.hull_reduction_rounds
-                      << " hull-effective="
-                      << statistics.hull_effective_reductions
-                      << " hull-contract-time="
-                      << statistics.hull_contraction_seconds
-                      << " hull-reject-time="
-                      << statistics.hull_direct_rejection_seconds
-                      << " shaving-rounds="
-                      << statistics.shaving_reduction_rounds
-                      << " shaving-effective="
-                      << statistics.shaving_effective_reductions
-                      << " shaving-time="
-                      << statistics.shaving_seconds
-                      << " newton-attempts="
-                      << statistics.interval_newton_attempts
-                      << " newton-effective="
-                      << statistics.interval_newton_effective_reductions
-                      << " newton-infeasible="
-                      << statistics.interval_newton_infeasible
-                      << " newton-singular="
-                      << statistics.interval_newton_singular
-                      << " newton-time="
-                      << statistics.interval_newton_seconds
-                      << std::endl;
-        };
-
-        run(false,"baseline");
-        run(true,"newton");
-        return 0;
-    }
-
-    if(mode=="smt-search-compare-2d-propagation") {
-        RealVariable rx("newton_2d_prop_x"), ry("newton_2d_prop_y");
-        RealExpression ex=rx;
-        RealExpression ey=ry;
-        RealSpace space({rx,ry});
-        List<SmtTheoryPrimitiveLiteral> literals({
-            SmtTheoryPrimitiveLiteral(
-                sqr(ex)+sqr(ey)-1,
-                SmtTheoryPrimitiveRelation::EQ_ZERO),
-            SmtTheoryPrimitiveLiteral(
-                ex-ey,
-                SmtTheoryPrimitiveRelation::EQ_ZERO)
-        });
-        ExactBoxType domain({
-            ExactIntervalType(0.5_x,1.0_x),
-            ExactIntervalType(0.5_x,1.0_x)
-        });
-
-        auto run=[&](Bool interval_newton_enabled,String const& label) {
-            SmtSolver solver(SmtSolverConfiguration(
-                1e-5_x,
-                std::numeric_limits<SizeType>::max(),
-                std::numeric_limits<SizeType>::max(),
-                4096u,
-                false,
-                false,
-                false,
-                false,
-                true,
-                true,
-                false,
-                false,
-                interval_newton_enabled));
-
-            auto const start=std::chrono::steady_clock::now();
-            SmtResult result=solver.solve(space,domain,literals);
-            double const seconds=elapsed_seconds(start);
-            auto const& statistics=result.statistics();
-
-            std::cout << "[smt-interval-newton-search]"
-                      << " variant=" << label
-                      << " dimension=2"
-                      << " propagation=enabled"
-                      << " status=" << result.status();
-            if(result.is_unknown()) {
-                std::cout << " reason=" << result.unknown_reason();
-            }
-            std::cout << " time=" << seconds
-                      << " boxes=" << statistics.boxes_processed
-                      << " pruned=" << statistics.boxes_pruned
-                      << " split=" << statistics.boxes_split
-                      << " epsilon-certified="
-                      << statistics.epsilon_box_certifications
-                      << " hull-rounds="
-                      << statistics.hull_reduction_rounds
-                      << " hull-effective="
-                      << statistics.hull_effective_reductions
-                      << " hull-contract-time="
-                      << statistics.hull_contraction_seconds
-                      << " hull-reject-time="
-                      << statistics.hull_direct_rejection_seconds
-                      << " shaving-rounds="
-                      << statistics.shaving_reduction_rounds
-                      << " shaving-effective="
-                      << statistics.shaving_effective_reductions
-                      << " shaving-time="
-                      << statistics.shaving_seconds
-                      << " newton-attempts="
-                      << statistics.interval_newton_attempts
-                      << " newton-effective="
-                      << statistics.interval_newton_effective_reductions
-                      << " newton-infeasible="
-                      << statistics.interval_newton_infeasible
-                      << " newton-singular="
-                      << statistics.interval_newton_singular
-                      << " newton-time="
-                      << statistics.interval_newton_seconds
-                      << std::endl;
-        };
-
-        run(false,"baseline");
-        run(true,"newton");
-        return 0;
-    }
-
-    if(mode=="smt-search-compare-4d-propagation") {
-        RealVariable x0("newton_4d_prop_x0"), x1("newton_4d_prop_x1");
-        RealVariable x2("newton_4d_prop_x2"), x3("newton_4d_prop_x3");
-        RealExpression e0=x0, e1=x1, e2=x2, e3=x3;
-        RealSpace space({x0,x1,x2,x3});
-        List<SmtTheoryPrimitiveLiteral> literals({
-            SmtTheoryPrimitiveLiteral(
-                sqr(e0)+sqr(e1)+sqr(e2)+sqr(e3)-2,
-                SmtTheoryPrimitiveRelation::EQ_ZERO),
-            SmtTheoryPrimitiveLiteral(
-                e0-e1,SmtTheoryPrimitiveRelation::EQ_ZERO),
-            SmtTheoryPrimitiveLiteral(
-                e1-e2,SmtTheoryPrimitiveRelation::EQ_ZERO),
-            SmtTheoryPrimitiveLiteral(
-                e2-e3,SmtTheoryPrimitiveRelation::EQ_ZERO)
-        });
-        ExactBoxType domain({
-            ExactIntervalType(0.5_x,1.0_x),
-            ExactIntervalType(0.5_x,1.0_x),
-            ExactIntervalType(0.5_x,1.0_x),
-            ExactIntervalType(0.5_x,1.0_x)
-        });
-
-        auto run=[&](Bool interval_newton_enabled,String const& label) {
-            SmtSolver solver(SmtSolverConfiguration(
-                1e-5_x,
-                std::numeric_limits<SizeType>::max(),
-                std::numeric_limits<SizeType>::max(),
-                65536u,
-                false,
-                false,
-                false,
-                false,
-                true,
-                true,
-                false,
-                false,
-                interval_newton_enabled));
-
-            auto const start=std::chrono::steady_clock::now();
-            SmtResult result=solver.solve(space,domain,literals);
-            double const seconds=elapsed_seconds(start);
-            auto const& statistics=result.statistics();
-
-            std::cout << "[smt-interval-newton-search]"
-                      << " variant=" << label
-                      << " dimension=4"
-                      << " propagation=enabled"
-                      << " status=" << result.status();
-            if(result.is_unknown()) {
-                std::cout << " reason=" << result.unknown_reason();
-            }
-            std::cout << " time=" << seconds
-                      << " boxes=" << statistics.boxes_processed
-                      << " pruned=" << statistics.boxes_pruned
-                      << " split=" << statistics.boxes_split
-                      << " epsilon-certified="
-                      << statistics.epsilon_box_certifications
-                      << " hull-rounds="
-                      << statistics.hull_reduction_rounds
-                      << " hull-effective="
-                      << statistics.hull_effective_reductions
-                      << " hull-contract-time="
-                      << statistics.hull_contraction_seconds
-                      << " hull-reject-time="
-                      << statistics.hull_direct_rejection_seconds
-                      << " shaving-rounds="
-                      << statistics.shaving_reduction_rounds
-                      << " shaving-effective="
-                      << statistics.shaving_effective_reductions
-                      << " shaving-time="
-                      << statistics.shaving_seconds
-                      << " newton-attempts="
-                      << statistics.interval_newton_attempts
-                      << " newton-effective="
-                      << statistics.interval_newton_effective_reductions
-                      << " newton-infeasible="
-                      << statistics.interval_newton_infeasible
-                      << " newton-singular="
-                      << statistics.interval_newton_singular
-                      << " newton-time="
-                      << statistics.interval_newton_seconds
-                      << std::endl;
-        };
-
-        run(false,"baseline");
-        run(true,"newton");
-        return 0;
-    }
-
-    if(mode=="smt-search-compare-4d") {
-        RealVariable x0("newton_4d_x0"), x1("newton_4d_x1");
-        RealVariable x2("newton_4d_x2"), x3("newton_4d_x3");
-        RealExpression e0=x0, e1=x1, e2=x2, e3=x3;
-        RealSpace space({x0,x1,x2,x3});
-        List<SmtTheoryPrimitiveLiteral> literals({
-            SmtTheoryPrimitiveLiteral(
-                sqr(e0)+sqr(e1)+sqr(e2)+sqr(e3)-2,
-                SmtTheoryPrimitiveRelation::EQ_ZERO),
-            SmtTheoryPrimitiveLiteral(
-                e0-e1,SmtTheoryPrimitiveRelation::EQ_ZERO),
-            SmtTheoryPrimitiveLiteral(
-                e1-e2,SmtTheoryPrimitiveRelation::EQ_ZERO),
-            SmtTheoryPrimitiveLiteral(
-                e2-e3,SmtTheoryPrimitiveRelation::EQ_ZERO)
-        });
-        ExactBoxType domain({
-            ExactIntervalType(0.5_x,1.0_x),
-            ExactIntervalType(0.5_x,1.0_x),
-            ExactIntervalType(0.5_x,1.0_x),
-            ExactIntervalType(0.5_x,1.0_x)
-        });
-
-        auto run=[&](Bool interval_newton_enabled,String const& label) {
-            SmtSolver solver(SmtSolverConfiguration(
-                1e-5_x,
-                std::numeric_limits<SizeType>::max(),
-                std::numeric_limits<SizeType>::max(),
-                65536u,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                interval_newton_enabled));
-
-            auto const start=std::chrono::steady_clock::now();
-            SmtResult result=solver.solve(space,domain,literals);
-            double const seconds=elapsed_seconds(start);
-            auto const& statistics=result.statistics();
-
-            std::cout << "[smt-interval-newton-search]"
-                      << " variant=" << label
-                      << " dimension=4"
-                      << " status=" << result.status();
-            if(result.is_unknown()) {
-                std::cout << " reason=" << result.unknown_reason();
-            }
-            std::cout << " time=" << seconds
-                      << " boxes=" << statistics.boxes_processed
-                      << " pruned=" << statistics.boxes_pruned
-                      << " split=" << statistics.boxes_split
-                      << " epsilon-certified="
-                      << statistics.epsilon_box_certifications
-                      << " newton-attempts="
-                      << statistics.interval_newton_attempts
-                      << " newton-effective="
-                      << statistics.interval_newton_effective_reductions
-                      << " newton-infeasible="
-                      << statistics.interval_newton_infeasible
-                      << " newton-singular="
-                      << statistics.interval_newton_singular
-                      << " newton-time="
-                      << statistics.interval_newton_seconds
-                      << std::endl;
-        };
-
-        run(false,"baseline");
-        run(true,"newton");
-        return 0;
-    }
-
-    if(mode=="smt-search-compare" || mode=="smt-search-compare-wide") {
-        RealVariable rx("newton_search_x"), ry("newton_search_y");
-        RealExpression ex=rx;
-        RealExpression ey=ry;
-        RealSpace space({rx,ry});
-        List<SmtTheoryPrimitiveLiteral> literals({
-            SmtTheoryPrimitiveLiteral(
-                sqr(ex)+sqr(ey)-1,
-                SmtTheoryPrimitiveRelation::EQ_ZERO),
-            SmtTheoryPrimitiveLiteral(
-                ex-ey,
-                SmtTheoryPrimitiveRelation::EQ_ZERO)
-        });
-        ExactBoxType domain=
-            mode=="smt-search-compare-wide"
-                ? ExactBoxType({
-                    ExactIntervalType(-2.0_x,2.0_x),
-                    ExactIntervalType(-2.0_x,2.0_x)})
-                : ExactBoxType({
-                    ExactIntervalType(0.5_x,1.0_x),
-                    ExactIntervalType(0.5_x,1.0_x)});
-
-
-        auto run=[&](Bool interval_newton_enabled,String const& label) {
-            SmtSolver solver(SmtSolverConfiguration(
-                1e-5_x,
-                std::numeric_limits<SizeType>::max(),
-                std::numeric_limits<SizeType>::max(),
-                4096u,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                interval_newton_enabled));
-
-            auto const start=std::chrono::steady_clock::now();
-            SmtResult result=solver.solve(space,domain,literals);
-            double const seconds=elapsed_seconds(start);
-            auto const& statistics=result.statistics();
-
-            std::cout << "[smt-interval-newton-search]"
-                      << " variant=" << label
-                      << " status=" << result.status();
-            if(result.is_unknown()) {
-                std::cout << " reason=" << result.unknown_reason();
-            }
-            std::cout << " time=" << seconds
-                      << " boxes=" << statistics.boxes_processed
-                      << " pruned=" << statistics.boxes_pruned
-                      << " split=" << statistics.boxes_split
-                      << " epsilon-certified="
-                      << statistics.epsilon_box_certifications
-                      << " newton-attempts="
-                      << statistics.interval_newton_attempts
-                      << " newton-effective="
-                      << statistics.interval_newton_effective_reductions
-                      << " newton-infeasible="
-                      << statistics.interval_newton_infeasible
-                      << " newton-singular="
-                      << statistics.interval_newton_singular
-                      << " newton-time="
-                      << statistics.interval_newton_seconds
-                      << std::endl;
-        };
-
-        run(false,"baseline");
-        run(true,"newton");
-        return 0;
-    }
-
-    if(mode=="smt-boolean-contract") {
-        RealVariable rx("newton_boolean_x"), ry("newton_boolean_y");
-        RealExpression ex=rx;
-        RealExpression ey=ry;
-        RealSpace space({rx,ry});
-        ContinuousPredicate formula=
-            ((sqr(ex)+sqr(ey)-1)==0) && ((ex-ey)==0);
-        ExactBoxType domain({
-            ExactIntervalType(0.5_x,1.0_x),
-            ExactIntervalType(0.5_x,1.0_x)
-        });
-
-        SmtSolver solver(SmtSolverConfiguration(
-            1e-5_x,
-            std::numeric_limits<SizeType>::max(),
-            std::numeric_limits<SizeType>::max(),
-            1u,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            true));
-
-        auto const start=std::chrono::steady_clock::now();
-        SmtResult result=solver.solve(space,domain,formula);
-        double const seconds=elapsed_seconds(start);
-        auto const& statistics=result.statistics();
-
-        std::cout << "[smt-interval-newton-integration]"
-                  << " mode=" << mode
-                  << " status=" << result.status();
-        if(result.is_unknown()) {
-            std::cout << " reason=" << result.unknown_reason();
-        }
-        std::cout << " time=" << seconds
-                  << " theory-checks=" << statistics.theory_checks
-                  << " boxes=" << statistics.boxes_processed
-                  << " pruned=" << statistics.boxes_pruned
-                  << " split=" << statistics.boxes_split
-                  << " newton-attempts=" << statistics.interval_newton_attempts
-                  << " newton-effective="
-                  << statistics.interval_newton_effective_reductions
-                  << " newton-infeasible="
-                  << statistics.interval_newton_infeasible
-                  << " newton-singular=" << statistics.interval_newton_singular
-                  << " newton-time=" << statistics.interval_newton_seconds
-                  << std::endl;
-        return 0;
-    }
-
-    if(mode=="smt-contract" || mode=="smt-infeasible" || mode=="smt-singular"
-       || mode=="smt-mixed-contract"
-       || mode=="smt-overdetermined-infeasible"
-       || mode=="smt-underdetermined"
-       || mode=="smt-first-subsystem-singular") {
-        RealVariable rx("newton_x"), ry("newton_y");
-        RealExpression ex=rx;
-        RealExpression ey=ry;
-        RealSpace space({rx,ry});
-
-        SmtTheoryPrimitiveLiteral circle(
-            sqr(ex)+sqr(ey)-1,
-            SmtTheoryPrimitiveRelation::EQ_ZERO);
-        SmtTheoryPrimitiveLiteral diagonal(
-            ex-ey,
-            SmtTheoryPrimitiveRelation::EQ_ZERO);
-        List<SmtTheoryPrimitiveLiteral> literals;
-        if(mode=="smt-mixed-contract") {
-            // Put a non-equality first to verify that subsystem extraction
-            // scans for EQ_ZERO literals rather than taking the first n.
-            literals.append(SmtTheoryPrimitiveLiteral(
-                ex,SmtTheoryPrimitiveRelation::GEQ_ZERO));
-            literals.append(circle);
-            literals.append(diagonal);
-        } else if(mode=="smt-overdetermined-infeasible") {
-            literals.append(circle);
-            literals.append(diagonal);
-            literals.append(SmtTheoryPrimitiveLiteral(
-                2*(ex-ey),SmtTheoryPrimitiveRelation::EQ_ZERO));
-        } else if(mode=="smt-underdetermined") {
-            literals.append(circle);
-            literals.append(SmtTheoryPrimitiveLiteral(
-                ex,SmtTheoryPrimitiveRelation::GEQ_ZERO));
-        } else if(mode=="smt-first-subsystem-singular") {
-            // The first two equalities are linearly dependent, while replacing
-            // the second by the circle equation yields a regular subsystem on
-            // [0.5,1]^2. This exposes the limitation of first-n selection.
-            literals.append(diagonal);
-            literals.append(SmtTheoryPrimitiveLiteral(
-                2*(ex-ey),SmtTheoryPrimitiveRelation::EQ_ZERO));
-            literals.append(circle);
-        } else {
-            literals.append(circle);
-            literals.append(diagonal);
+            run(false, "baseline");
+            run(true, "newton");
+            return 0;
         }
 
-        ExactBoxType domain=
-            (mode=="smt-contract" || mode=="smt-mixed-contract"
-             || mode=="smt-underdetermined"
-             || mode=="smt-first-subsystem-singular")
-                ? ExactBoxType({
-                    ExactIntervalType(0.5_x,1.0_x),
-                    ExactIntervalType(0.5_x,1.0_x)})
-                : (mode=="smt-infeasible"
-                   || mode=="smt-overdetermined-infeasible")
-                    ? ExactBoxType({
-                        ExactIntervalType(0.8_x,1.0_x),
-                        ExactIntervalType(0.8_x,1.0_x)})
-                    : ExactBoxType({
-                        ExactIntervalType(-1.0_x,1.0_x),
-                        ExactIntervalType(-1.0_x,1.0_x)});
+        if (mode == "smt-search-compare-3d-propagation") {
+            RealVariable x0("newton_3d_prop_x0"), x1("newton_3d_prop_x1");
+            RealVariable x2("newton_3d_prop_x2");
+            RealExpression e0 = x0, e1 = x1, e2 = x2;
+            RealSpace space({x0, x1, x2});
+            List<SmtTheoryPrimitiveLiteral> literals({SmtTheoryPrimitiveLiteral(
+                                                          sqr(e0) + sqr(e1) + sqr(e2) - 1.5_x,
+                                                          SmtTheoryPrimitiveRelation::EQ_ZERO),
+                                                      SmtTheoryPrimitiveLiteral(
+                                                          e0 - e1, SmtTheoryPrimitiveRelation::EQ_ZERO),
+                                                      SmtTheoryPrimitiveLiteral(
+                                                          e1 - e2, SmtTheoryPrimitiveRelation::EQ_ZERO)});
+            ExactBoxType domain({ExactIntervalType(0.5_x, 1.0_x),
+                                 ExactIntervalType(0.5_x, 1.0_x),
+                                 ExactIntervalType(0.5_x, 1.0_x)});
 
-        SmtSolver solver(SmtSolverConfiguration(
-            1e-5_x,
-            std::numeric_limits<SizeType>::max(),
-            std::numeric_limits<SizeType>::max(),
-            1u,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            false,
-            true));
+            auto run = [&](Bool interval_newton_enabled, const String& label) {
+                SmtSolver solver(SmtSolverConfiguration(
+                    1e-5_x,
+                    std::numeric_limits<SizeType>::max(),
+                    std::numeric_limits<SizeType>::max(),
+                    16384u,
+                    false,
+                    false,
+                    false,
+                    false,
+                    true,
+                    true,
+                    false,
+                    false,
+                    interval_newton_enabled));
 
-        auto const start=std::chrono::steady_clock::now();
-        SmtResult result=solver.solve(space,domain,literals);
-        double const seconds=elapsed_seconds(start);
-        auto const& statistics=result.statistics();
+                const auto start = std::chrono::steady_clock::now();
+                SmtResult result = solver.solve(space, domain, literals);
+                const double seconds = elapsed_seconds(start);
+                const auto& statistics = result.statistics();
 
-        std::cout << "[smt-interval-newton-integration]"
-                  << " mode=" << mode
-                  << " status=" << result.status();
-        if(result.is_unknown()) {
-            std::cout << " reason=" << result.unknown_reason();
-        }
-        std::cout << " time=" << seconds
-                  << " boxes=" << statistics.boxes_processed
-                  << " pruned=" << statistics.boxes_pruned
-                  << " split=" << statistics.boxes_split
-                  << " newton-attempts=" << statistics.interval_newton_attempts
-                  << " newton-effective="
-                  << statistics.interval_newton_effective_reductions
-                  << " newton-infeasible="
-                  << statistics.interval_newton_infeasible
-                  << " newton-singular=" << statistics.interval_newton_singular
-                  << " newton-time=" << statistics.interval_newton_seconds
-                  << std::endl;
-        return 0;
-    }
+                std::cout << "[smt-interval-newton-search]"
+                          << " variant=" << label
+                          << " dimension=3"
+                          << " propagation=enabled"
+                          << " status=" << result.status();
+                if (result.is_unknown()) {
+                    std::cout << " reason=" << result.unknown_reason();
+                }
+                std::cout << " time=" << seconds
+                          << " boxes=" << statistics.boxes_processed
+                          << " pruned=" << statistics.boxes_pruned
+                          << " split=" << statistics.boxes_split
+                          << " epsilon-certified="
+                          << statistics.epsilon_box_certifications
+                          << " hull-rounds="
+                          << statistics.hull_reduction_rounds
+                          << " hull-effective="
+                          << statistics.hull_effective_reductions
+                          << " hull-contract-time="
+                          << statistics.hull_contraction_seconds
+                          << " hull-reject-time="
+                          << statistics.hull_direct_rejection_seconds
+                          << " shaving-rounds="
+                          << statistics.shaving_reduction_rounds
+                          << " shaving-effective="
+                          << statistics.shaving_effective_reductions
+                          << " shaving-time="
+                          << statistics.shaving_seconds
+                          << " newton-attempts="
+                          << statistics.interval_newton_attempts
+                          << " newton-effective="
+                          << statistics.interval_newton_effective_reductions
+                          << " newton-infeasible="
+                          << statistics.interval_newton_infeasible
+                          << " newton-singular="
+                          << statistics.interval_newton_singular
+                          << " newton-time="
+                          << statistics.interval_newton_seconds
+                          << std::endl;
+            };
 
-    auto x=ValidatedScalarMultivariateFunction::coordinates(2u);
-    ValidatedVectorMultivariateFunction function(
-        List<ValidatedScalarMultivariateFunction>({
-            sqr(x[0u])+sqr(x[1u])-1,
-            x[0u]-x[1u]
-        }));
-
-    ExactBoxType exact_domain=
-        mode=="contract"
-            ? ExactBoxType({
-                ExactIntervalType(0.5_x,1.0_x),
-                ExactIntervalType(0.5_x,1.0_x)})
-            : mode=="infeasible"
-                ? ExactBoxType({
-                    ExactIntervalType(0.8_x,1.0_x),
-                    ExactIntervalType(0.8_x,1.0_x)})
-                : ExactBoxType({
-                    ExactIntervalType(-1.0_x,1.0_x),
-                    ExactIntervalType(-1.0_x,1.0_x)});
-
-    Vector<EquationSolverInterface::ValidatedNumericType> current=
-        cast_singleton(exact_domain);
-    IntervalNewtonSolver solver(1e-12,1u);
-
-    auto const start=std::chrono::steady_clock::now();
-    try {
-        Vector<EquationSolverInterface::ValidatedNumericType> image=
-            solver.step(function,current);
-        double const seconds=elapsed_seconds(start);
-        Bool const disjoint=not consistent(image,current);
-
-        Vector<EquationSolverInterface::ValidatedNumericType> contracted=current;
-        if(not disjoint) {
-            contracted=refinement(image,current);
+            run(false, "baseline");
+            run(true, "newton");
+            return 0;
         }
 
-        std::cout << "[smt-interval-newton]"
-                  << " mode=" << mode
-                  << " time=" << seconds
-                  << " disjoint=" << disjoint
-                  << " input-width-sum=" << width_sum(current)
-                  << " newton-width-sum=" << width_sum(image)
-                  << " contracted-width-sum="
-                  << (disjoint ? 0.0 : width_sum(contracted))
-                  << " input=" << current
-                  << " newton=" << image;
-        if(not disjoint) {
-            std::cout << " contracted=" << contracted;
+        if (mode == "smt-search-compare-2d-propagation") {
+            RealVariable rx("newton_2d_prop_x"), ry("newton_2d_prop_y");
+            RealExpression ex = rx;
+            RealExpression ey = ry;
+            RealSpace space({rx, ry});
+            List<SmtTheoryPrimitiveLiteral> literals({SmtTheoryPrimitiveLiteral(
+                                                          sqr(ex) + sqr(ey) - 1,
+                                                          SmtTheoryPrimitiveRelation::EQ_ZERO),
+                                                      SmtTheoryPrimitiveLiteral(
+                                                          ex - ey,
+                                                          SmtTheoryPrimitiveRelation::EQ_ZERO)});
+            ExactBoxType domain({ExactIntervalType(0.5_x, 1.0_x),
+                                 ExactIntervalType(0.5_x, 1.0_x)});
+
+            auto run = [&](Bool interval_newton_enabled, const String& label) {
+                SmtSolver solver(SmtSolverConfiguration(
+                    1e-5_x,
+                    std::numeric_limits<SizeType>::max(),
+                    std::numeric_limits<SizeType>::max(),
+                    4096u,
+                    false,
+                    false,
+                    false,
+                    false,
+                    true,
+                    true,
+                    false,
+                    false,
+                    interval_newton_enabled));
+
+                const auto start = std::chrono::steady_clock::now();
+                SmtResult result = solver.solve(space, domain, literals);
+                const double seconds = elapsed_seconds(start);
+                const auto& statistics = result.statistics();
+
+                std::cout << "[smt-interval-newton-search]"
+                          << " variant=" << label
+                          << " dimension=2"
+                          << " propagation=enabled"
+                          << " status=" << result.status();
+                if (result.is_unknown()) {
+                    std::cout << " reason=" << result.unknown_reason();
+                }
+                std::cout << " time=" << seconds
+                          << " boxes=" << statistics.boxes_processed
+                          << " pruned=" << statistics.boxes_pruned
+                          << " split=" << statistics.boxes_split
+                          << " epsilon-certified="
+                          << statistics.epsilon_box_certifications
+                          << " hull-rounds="
+                          << statistics.hull_reduction_rounds
+                          << " hull-effective="
+                          << statistics.hull_effective_reductions
+                          << " hull-contract-time="
+                          << statistics.hull_contraction_seconds
+                          << " hull-reject-time="
+                          << statistics.hull_direct_rejection_seconds
+                          << " shaving-rounds="
+                          << statistics.shaving_reduction_rounds
+                          << " shaving-effective="
+                          << statistics.shaving_effective_reductions
+                          << " shaving-time="
+                          << statistics.shaving_seconds
+                          << " newton-attempts="
+                          << statistics.interval_newton_attempts
+                          << " newton-effective="
+                          << statistics.interval_newton_effective_reductions
+                          << " newton-infeasible="
+                          << statistics.interval_newton_infeasible
+                          << " newton-singular="
+                          << statistics.interval_newton_singular
+                          << " newton-time="
+                          << statistics.interval_newton_seconds
+                          << std::endl;
+            };
+
+            run(false, "baseline");
+            run(true, "newton");
+            return 0;
         }
-        std::cout << std::endl;
-        return 0;
-    }
-    catch(const SingularMatrixException& exception) {
-        double const seconds=elapsed_seconds(start);
-        std::cout << "[smt-interval-newton]"
-                  << " mode=" << mode
-                  << " time=" << seconds
-                  << " singular=true"
-                  << " input-width-sum=" << width_sum(current)
-                  << " message=" << exception.what()
-                  << std::endl;
-        return mode=="singular" ? 0 : 1;
-    }
-    } catch(std::exception const& error) {
-        LOGGING_PRINTLN("benchmark_smt_interval_newton: "<<error.what())
+
+        if (mode == "smt-search-compare-4d-propagation") {
+            RealVariable x0("newton_4d_prop_x0"), x1("newton_4d_prop_x1");
+            RealVariable x2("newton_4d_prop_x2"), x3("newton_4d_prop_x3");
+            RealExpression e0 = x0, e1 = x1, e2 = x2, e3 = x3;
+            RealSpace space({x0, x1, x2, x3});
+            List<SmtTheoryPrimitiveLiteral> literals({SmtTheoryPrimitiveLiteral(
+                                                          sqr(e0) + sqr(e1) + sqr(e2) + sqr(e3) - 2,
+                                                          SmtTheoryPrimitiveRelation::EQ_ZERO),
+                                                      SmtTheoryPrimitiveLiteral(
+                                                          e0 - e1, SmtTheoryPrimitiveRelation::EQ_ZERO),
+                                                      SmtTheoryPrimitiveLiteral(
+                                                          e1 - e2, SmtTheoryPrimitiveRelation::EQ_ZERO),
+                                                      SmtTheoryPrimitiveLiteral(
+                                                          e2 - e3, SmtTheoryPrimitiveRelation::EQ_ZERO)});
+            ExactBoxType domain({ExactIntervalType(0.5_x, 1.0_x),
+                                 ExactIntervalType(0.5_x, 1.0_x),
+                                 ExactIntervalType(0.5_x, 1.0_x),
+                                 ExactIntervalType(0.5_x, 1.0_x)});
+
+            auto run = [&](Bool interval_newton_enabled, const String& label) {
+                SmtSolver solver(SmtSolverConfiguration(
+                    1e-5_x,
+                    std::numeric_limits<SizeType>::max(),
+                    std::numeric_limits<SizeType>::max(),
+                    65536u,
+                    false,
+                    false,
+                    false,
+                    false,
+                    true,
+                    true,
+                    false,
+                    false,
+                    interval_newton_enabled));
+
+                const auto start = std::chrono::steady_clock::now();
+                SmtResult result = solver.solve(space, domain, literals);
+                const double seconds = elapsed_seconds(start);
+                const auto& statistics = result.statistics();
+
+                std::cout << "[smt-interval-newton-search]"
+                          << " variant=" << label
+                          << " dimension=4"
+                          << " propagation=enabled"
+                          << " status=" << result.status();
+                if (result.is_unknown()) {
+                    std::cout << " reason=" << result.unknown_reason();
+                }
+                std::cout << " time=" << seconds
+                          << " boxes=" << statistics.boxes_processed
+                          << " pruned=" << statistics.boxes_pruned
+                          << " split=" << statistics.boxes_split
+                          << " epsilon-certified="
+                          << statistics.epsilon_box_certifications
+                          << " hull-rounds="
+                          << statistics.hull_reduction_rounds
+                          << " hull-effective="
+                          << statistics.hull_effective_reductions
+                          << " hull-contract-time="
+                          << statistics.hull_contraction_seconds
+                          << " hull-reject-time="
+                          << statistics.hull_direct_rejection_seconds
+                          << " shaving-rounds="
+                          << statistics.shaving_reduction_rounds
+                          << " shaving-effective="
+                          << statistics.shaving_effective_reductions
+                          << " shaving-time="
+                          << statistics.shaving_seconds
+                          << " newton-attempts="
+                          << statistics.interval_newton_attempts
+                          << " newton-effective="
+                          << statistics.interval_newton_effective_reductions
+                          << " newton-infeasible="
+                          << statistics.interval_newton_infeasible
+                          << " newton-singular="
+                          << statistics.interval_newton_singular
+                          << " newton-time="
+                          << statistics.interval_newton_seconds
+                          << std::endl;
+            };
+
+            run(false, "baseline");
+            run(true, "newton");
+            return 0;
+        }
+
+        if (mode == "smt-search-compare-4d") {
+            RealVariable x0("newton_4d_x0"), x1("newton_4d_x1");
+            RealVariable x2("newton_4d_x2"), x3("newton_4d_x3");
+            RealExpression e0 = x0, e1 = x1, e2 = x2, e3 = x3;
+            RealSpace space({x0, x1, x2, x3});
+            List<SmtTheoryPrimitiveLiteral> literals({SmtTheoryPrimitiveLiteral(
+                                                          sqr(e0) + sqr(e1) + sqr(e2) + sqr(e3) - 2,
+                                                          SmtTheoryPrimitiveRelation::EQ_ZERO),
+                                                      SmtTheoryPrimitiveLiteral(
+                                                          e0 - e1, SmtTheoryPrimitiveRelation::EQ_ZERO),
+                                                      SmtTheoryPrimitiveLiteral(
+                                                          e1 - e2, SmtTheoryPrimitiveRelation::EQ_ZERO),
+                                                      SmtTheoryPrimitiveLiteral(
+                                                          e2 - e3, SmtTheoryPrimitiveRelation::EQ_ZERO)});
+            ExactBoxType domain({ExactIntervalType(0.5_x, 1.0_x),
+                                 ExactIntervalType(0.5_x, 1.0_x),
+                                 ExactIntervalType(0.5_x, 1.0_x),
+                                 ExactIntervalType(0.5_x, 1.0_x)});
+
+            auto run = [&](Bool interval_newton_enabled, const String& label) {
+                SmtSolver solver(SmtSolverConfiguration(
+                    1e-5_x,
+                    std::numeric_limits<SizeType>::max(),
+                    std::numeric_limits<SizeType>::max(),
+                    65536u,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    interval_newton_enabled));
+
+                const auto start = std::chrono::steady_clock::now();
+                SmtResult result = solver.solve(space, domain, literals);
+                const double seconds = elapsed_seconds(start);
+                const auto& statistics = result.statistics();
+
+                std::cout << "[smt-interval-newton-search]"
+                          << " variant=" << label
+                          << " dimension=4"
+                          << " status=" << result.status();
+                if (result.is_unknown()) {
+                    std::cout << " reason=" << result.unknown_reason();
+                }
+                std::cout << " time=" << seconds
+                          << " boxes=" << statistics.boxes_processed
+                          << " pruned=" << statistics.boxes_pruned
+                          << " split=" << statistics.boxes_split
+                          << " epsilon-certified="
+                          << statistics.epsilon_box_certifications
+                          << " newton-attempts="
+                          << statistics.interval_newton_attempts
+                          << " newton-effective="
+                          << statistics.interval_newton_effective_reductions
+                          << " newton-infeasible="
+                          << statistics.interval_newton_infeasible
+                          << " newton-singular="
+                          << statistics.interval_newton_singular
+                          << " newton-time="
+                          << statistics.interval_newton_seconds
+                          << std::endl;
+            };
+
+            run(false, "baseline");
+            run(true, "newton");
+            return 0;
+        }
+
+        if (mode == "smt-search-compare" || mode == "smt-search-compare-wide") {
+            RealVariable rx("newton_search_x"), ry("newton_search_y");
+            RealExpression ex = rx;
+            RealExpression ey = ry;
+            RealSpace space({rx, ry});
+            List<SmtTheoryPrimitiveLiteral> literals({SmtTheoryPrimitiveLiteral(
+                                                          sqr(ex) + sqr(ey) - 1,
+                                                          SmtTheoryPrimitiveRelation::EQ_ZERO),
+                                                      SmtTheoryPrimitiveLiteral(
+                                                          ex - ey,
+                                                          SmtTheoryPrimitiveRelation::EQ_ZERO)});
+            ExactBoxType domain =
+                mode == "smt-search-compare-wide"
+                    ? ExactBoxType({ExactIntervalType(-2.0_x, 2.0_x),
+                                    ExactIntervalType(-2.0_x, 2.0_x)})
+                    : ExactBoxType({ExactIntervalType(0.5_x, 1.0_x),
+                                    ExactIntervalType(0.5_x, 1.0_x)});
+
+            auto run = [&](Bool interval_newton_enabled, const String& label) {
+                SmtSolver solver(SmtSolverConfiguration(
+                    1e-5_x,
+                    std::numeric_limits<SizeType>::max(),
+                    std::numeric_limits<SizeType>::max(),
+                    4096u,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    interval_newton_enabled));
+
+                const auto start = std::chrono::steady_clock::now();
+                SmtResult result = solver.solve(space, domain, literals);
+                const double seconds = elapsed_seconds(start);
+                const auto& statistics = result.statistics();
+
+                std::cout << "[smt-interval-newton-search]"
+                          << " variant=" << label
+                          << " status=" << result.status();
+                if (result.is_unknown()) {
+                    std::cout << " reason=" << result.unknown_reason();
+                }
+                std::cout << " time=" << seconds
+                          << " boxes=" << statistics.boxes_processed
+                          << " pruned=" << statistics.boxes_pruned
+                          << " split=" << statistics.boxes_split
+                          << " epsilon-certified="
+                          << statistics.epsilon_box_certifications
+                          << " newton-attempts="
+                          << statistics.interval_newton_attempts
+                          << " newton-effective="
+                          << statistics.interval_newton_effective_reductions
+                          << " newton-infeasible="
+                          << statistics.interval_newton_infeasible
+                          << " newton-singular="
+                          << statistics.interval_newton_singular
+                          << " newton-time="
+                          << statistics.interval_newton_seconds
+                          << std::endl;
+            };
+
+            run(false, "baseline");
+            run(true, "newton");
+            return 0;
+        }
+
+        if (mode == "smt-boolean-contract") {
+            RealVariable rx("newton_boolean_x"), ry("newton_boolean_y");
+            RealExpression ex = rx;
+            RealExpression ey = ry;
+            RealSpace space({rx, ry});
+            ContinuousPredicate formula =
+                ((sqr(ex) + sqr(ey) - 1) == 0) && ((ex - ey) == 0);
+            ExactBoxType domain({ExactIntervalType(0.5_x, 1.0_x),
+                                 ExactIntervalType(0.5_x, 1.0_x)});
+
+            SmtSolver solver(SmtSolverConfiguration(
+                1e-5_x,
+                std::numeric_limits<SizeType>::max(),
+                std::numeric_limits<SizeType>::max(),
+                1u,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                true));
+
+            const auto start = std::chrono::steady_clock::now();
+            SmtResult result = solver.solve(space, domain, formula);
+            const double seconds = elapsed_seconds(start);
+            const auto& statistics = result.statistics();
+
+            std::cout << "[smt-interval-newton-integration]"
+                      << " mode=" << mode
+                      << " status=" << result.status();
+            if (result.is_unknown()) {
+                std::cout << " reason=" << result.unknown_reason();
+            }
+            std::cout << " time=" << seconds
+                      << " theory-checks=" << statistics.theory_checks
+                      << " boxes=" << statistics.boxes_processed
+                      << " pruned=" << statistics.boxes_pruned
+                      << " split=" << statistics.boxes_split
+                      << " newton-attempts=" << statistics.interval_newton_attempts
+                      << " newton-effective="
+                      << statistics.interval_newton_effective_reductions
+                      << " newton-infeasible="
+                      << statistics.interval_newton_infeasible
+                      << " newton-singular=" << statistics.interval_newton_singular
+                      << " newton-time=" << statistics.interval_newton_seconds
+                      << std::endl;
+            return 0;
+        }
+
+        if (mode == "smt-contract" || mode == "smt-infeasible" || mode == "smt-singular" || mode == "smt-mixed-contract" || mode == "smt-overdetermined-infeasible" || mode == "smt-underdetermined" || mode == "smt-first-subsystem-singular") {
+            RealVariable rx("newton_x"), ry("newton_y");
+            RealExpression ex = rx;
+            RealExpression ey = ry;
+            RealSpace space({rx, ry});
+
+            SmtTheoryPrimitiveLiteral circle(
+                sqr(ex) + sqr(ey) - 1,
+                SmtTheoryPrimitiveRelation::EQ_ZERO);
+            SmtTheoryPrimitiveLiteral diagonal(
+                ex - ey,
+                SmtTheoryPrimitiveRelation::EQ_ZERO);
+            List<SmtTheoryPrimitiveLiteral> literals;
+            if (mode == "smt-mixed-contract") {
+                // Put a non-equality first to verify that subsystem extraction
+                // scans for EQ_ZERO literals rather than taking the first n.
+                literals.append(SmtTheoryPrimitiveLiteral(
+                    ex, SmtTheoryPrimitiveRelation::GEQ_ZERO));
+                literals.append(circle);
+                literals.append(diagonal);
+            } else if (mode == "smt-overdetermined-infeasible") {
+                literals.append(circle);
+                literals.append(diagonal);
+                literals.append(SmtTheoryPrimitiveLiteral(
+                    2 * (ex - ey), SmtTheoryPrimitiveRelation::EQ_ZERO));
+            } else if (mode == "smt-underdetermined") {
+                literals.append(circle);
+                literals.append(SmtTheoryPrimitiveLiteral(
+                    ex, SmtTheoryPrimitiveRelation::GEQ_ZERO));
+            } else if (mode == "smt-first-subsystem-singular") {
+                // The first two equalities are linearly dependent, while replacing
+                // the second by the circle equation yields a regular subsystem on
+                // [0.5,1]^2. This exposes the limitation of first-n selection.
+                literals.append(diagonal);
+                literals.append(SmtTheoryPrimitiveLiteral(
+                    2 * (ex - ey), SmtTheoryPrimitiveRelation::EQ_ZERO));
+                literals.append(circle);
+            } else {
+                literals.append(circle);
+                literals.append(diagonal);
+            }
+
+            ExactBoxType domain =
+                (mode == "smt-contract" || mode == "smt-mixed-contract" || mode == "smt-underdetermined" || mode == "smt-first-subsystem-singular")
+                    ? ExactBoxType({ExactIntervalType(0.5_x, 1.0_x),
+                                    ExactIntervalType(0.5_x, 1.0_x)})
+                : (mode == "smt-infeasible" || mode == "smt-overdetermined-infeasible")
+                    ? ExactBoxType({ExactIntervalType(0.8_x, 1.0_x),
+                                    ExactIntervalType(0.8_x, 1.0_x)})
+                    : ExactBoxType({ExactIntervalType(-1.0_x, 1.0_x),
+                                    ExactIntervalType(-1.0_x, 1.0_x)});
+
+            SmtSolver solver(SmtSolverConfiguration(
+                1e-5_x,
+                std::numeric_limits<SizeType>::max(),
+                std::numeric_limits<SizeType>::max(),
+                1u,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                true));
+
+            const auto start = std::chrono::steady_clock::now();
+            SmtResult result = solver.solve(space, domain, literals);
+            const double seconds = elapsed_seconds(start);
+            const auto& statistics = result.statistics();
+
+            std::cout << "[smt-interval-newton-integration]"
+                      << " mode=" << mode
+                      << " status=" << result.status();
+            if (result.is_unknown()) {
+                std::cout << " reason=" << result.unknown_reason();
+            }
+            std::cout << " time=" << seconds
+                      << " boxes=" << statistics.boxes_processed
+                      << " pruned=" << statistics.boxes_pruned
+                      << " split=" << statistics.boxes_split
+                      << " newton-attempts=" << statistics.interval_newton_attempts
+                      << " newton-effective="
+                      << statistics.interval_newton_effective_reductions
+                      << " newton-infeasible="
+                      << statistics.interval_newton_infeasible
+                      << " newton-singular=" << statistics.interval_newton_singular
+                      << " newton-time=" << statistics.interval_newton_seconds
+                      << std::endl;
+            return 0;
+        }
+
+        auto x = ValidatedScalarMultivariateFunction::coordinates(2u);
+        ValidatedVectorMultivariateFunction function(
+            List<ValidatedScalarMultivariateFunction>({sqr(x[0u]) + sqr(x[1u]) - 1,
+                                                       x[0u] - x[1u]}));
+
+        ExactBoxType exact_domain =
+            mode == "contract"
+                ? ExactBoxType({ExactIntervalType(0.5_x, 1.0_x),
+                                ExactIntervalType(0.5_x, 1.0_x)})
+            : mode == "infeasible"
+                ? ExactBoxType({ExactIntervalType(0.8_x, 1.0_x),
+                                ExactIntervalType(0.8_x, 1.0_x)})
+                : ExactBoxType({ExactIntervalType(-1.0_x, 1.0_x),
+                                ExactIntervalType(-1.0_x, 1.0_x)});
+
+        Vector<EquationSolverInterface::ValidatedNumericType> current =
+            cast_singleton(exact_domain);
+        IntervalNewtonSolver solver(1e-12, 1u);
+
+        const auto start = std::chrono::steady_clock::now();
+        try {
+            Vector<EquationSolverInterface::ValidatedNumericType> image =
+                solver.step(function, current);
+            const double seconds = elapsed_seconds(start);
+            const Bool disjoint = not consistent(image, current);
+
+            Vector<EquationSolverInterface::ValidatedNumericType> contracted = current;
+            if (not disjoint) {
+                contracted = refinement(image, current);
+            }
+
+            std::cout << "[smt-interval-newton]"
+                      << " mode=" << mode
+                      << " time=" << seconds
+                      << " disjoint=" << disjoint
+                      << " input-width-sum=" << width_sum(current)
+                      << " newton-width-sum=" << width_sum(image)
+                      << " contracted-width-sum="
+                      << (disjoint ? 0.0 : width_sum(contracted))
+                      << " input=" << current
+                      << " newton=" << image;
+            if (not disjoint) {
+                std::cout << " contracted=" << contracted;
+            }
+            std::cout << std::endl;
+            return 0;
+        } catch (const SingularMatrixException& exception) {
+            const double seconds = elapsed_seconds(start);
+            std::cout << "[smt-interval-newton]"
+                      << " mode=" << mode
+                      << " time=" << seconds
+                      << " singular=true"
+                      << " input-width-sum=" << width_sum(current)
+                      << " message=" << exception.what()
+                      << std::endl;
+            return mode == "singular" ? 0 : 1;
+        }
+    } catch (const std::exception& error) {
+        LOGGING_PRINTLN("benchmark_smt_interval_newton: " << error.what())
         return 1;
     }
 }
