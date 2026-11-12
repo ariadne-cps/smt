@@ -14,7 +14,7 @@ This repository is dedicated to the epsilon-SMT solver. General-purpose symbolic
 
 ## Layout
 
-The public API lives in `include/smt`, with umbrella header `include/ariadne-smt.hpp`. The solver implementation is under `src`, the C++ regression suite under `tests`, performance and solver-strategy benchmarks under `benchmarks`, the design journal under `doc/designs`, Python bindings and tests under `python`, and standalone examples under `tutorials/tutorial_smt`.
+The public API lives in `include/smt`, with umbrella header `include/ariadne-smt.hpp`. The solver implementation is under `src`, the C++ regression suite under `tests`, performance and solver-strategy benchmarks under `benchmarks`, the design journal at [`doc/smt_solver_design.md`](doc/smt_solver_design.md), Python bindings and tests under `python`, and standalone C++ and Python examples under `tutorial/`.
 
 ## Dependencies
 
@@ -51,7 +51,7 @@ cmake --build build --parallel --target benchmarks
 ctest --test-dir build --output-on-failure
 ```
 
-The standalone C++ tutorial is in `tutorials/tutorial_smt`, and the Python tutorial is `python/tutorials/tutorial_smt.py`. Both illustrate epsilon-SMT solving, including satisfiable and unsatisfiable bounded-real formulas and Boolean combinations.
+The standalone C++ tutorial is at `tutorial/tutorial_smt.cpp`, and the Python tutorial is at `tutorial/tutorial_smt.py`. Both illustrate epsilon-SMT solving, including satisfiable and unsatisfiable bounded-real formulas and Boolean combinations.
 
 ## Python bindings
 

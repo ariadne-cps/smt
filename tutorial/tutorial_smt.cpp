@@ -22,7 +22,7 @@
  *  along with Ariadne SMT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/** @file tutorials/tutorial_smt/tutorial_smt.cpp
+/** @file tutorial/tutorial_smt.cpp
  *  @brief Demonstrate standalone bounded real SMT solving.
  */
 
