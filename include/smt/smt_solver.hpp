@@ -6,24 +6,24 @@
  ****************************************************************************/
 
 /*
- *  This file is part of Ariadne.
+ *  This file is part of Ariadne SMT.
  *
- *  Ariadne is free software: you can redistribute it and/or modify
+ *  Ariadne SMT is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, either version 3 of the License, or
  *  (at your option) any later version.
  *
- *  Ariadne is distributed in the hope that it will be useful,
+ *  Ariadne SMT is distributed in the hope that it will be useful,
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with Ariadne.  If not, see <https://www.gnu.org/licenses/>.
+ *  along with Ariadne SMT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/*! \file smt/smt_solver.hpp
- *  \brief Common types for solving bounded real SMT problems.
+/** @file smt/smt_solver.hpp
+ *  @brief Configuration, statistics, results and search procedures for bounded real SMT.
  */
 
 #ifndef ARIADNE_SMT_SOLVER_HPP
@@ -310,10 +310,12 @@ class SmtResult {
 OutputStream& operator<<(OutputStream& os, SmtResultStatus status);
 OutputStream& operator<<(OutputStream& os, SmtUnknownReason reason);
 
+/** @brief Bounded-real solver combining Boolean search and validated theory reasoning. */
 class SmtSolver;
 
 namespace SmtSolverTestSupport {
 
+/** @brief LearnedClausePruningEntry represents an SMT search component. */
 struct LearnedClausePruningEntry {
     Bool active = true;
     Bool theory = false;
@@ -338,6 +340,7 @@ Void accumulate_statistics(
     SmtSearchStatistics& target,
     SmtSearchStatistics const& source);
 
+/** @brief PreclassificationShadowSummary represents an SMT search component. */
 struct PreclassificationShadowSummary {
     SizeType checks = 0u;
     SizeType skipped = 0u;
@@ -357,6 +360,7 @@ Void record_first_minimization_candidate_trail_rank(
     SmtSearchStatistics& statistics,
     SizeType trail_rank);
 
+/** @brief ParallelExecutionObservation represents an SMT search component. */
 struct ParallelExecutionObservation {
     SizeType observed_thread_count = 0u;
     SizeType worker_thread_count = 0u;
@@ -376,6 +380,7 @@ std::vector<UpperBoxType> sequential_children_to_push(
     Pair<UpperBoxType,UpperBoxType> const& children);
 Pair<Bool,Bool> parallel_witness_claim_sequence();
 
+/** @brief CandidateWitnessOutcome represents an SMT search component. */
 struct CandidateWitnessOutcome {
     Bool attempted = false;
     Bool certified = false;
@@ -388,6 +393,7 @@ CandidateWitnessOutcome candidate_witness_outcome(
 
 SizeType epsilon_witness_candidate_count(UpperBoxType const& domain);
 
+/** @brief SensitivitySplitSelection represents an SMT search component. */
 struct SensitivitySplitSelection {
     SizeType coordinate = 0u;
     Bool guided = false;
@@ -419,6 +425,7 @@ SizeType interval_newton_subsystem_candidate_count(
     RealSpace const& space,
     List<SmtTheoryPrimitiveLiteral> const& literals);
 
+/** @brief SearchOutcome represents an SMT search component. */
 struct SearchOutcome {
     std::optional<UpperBoxType> witness;
     std::optional<SizeType> backjump_level;
@@ -437,6 +444,7 @@ SmtResult finalize_search_outcome(
     SmtUnknownReason theory_unknown_reason,
     SmtSearchStatistics const& statistics);
 
+/** @brief BoxProcessingStatus represents an SMT search component. */
 enum class BoxProcessingStatus {
     PRUNED,
     EPSILON_SAT,
@@ -444,6 +452,7 @@ enum class BoxProcessingStatus {
     UNKNOWN
 };
 
+/** @brief BoxProcessingStatisticsInput represents an SMT search component. */
 struct BoxProcessingStatisticsInput {
     BoxProcessingStatus status;
     SizeType hull_rounds = 0u;
@@ -464,6 +473,7 @@ Void accumulate_box_processing_statistics(
     SmtSearchStatistics& statistics,
     BoxProcessingStatisticsInput const& input);
 
+/** @brief DirectBoxProcessingObservation represents an SMT search component. */
 struct DirectBoxProcessingObservation {
     BoxProcessingStatus status = BoxProcessingStatus::UNKNOWN;
     Bool fused_direct_classification = false;
@@ -498,6 +508,7 @@ Bool assignment_locks_clause(
     std::optional<SizeType> const& reason_clause,
     SizeType clause_index);
 
+/** @brief TheoryAtomTruth represents an SMT search component. */
 enum class TheoryAtomTruth {
     FALSE_VALUE,
     UNKNOWN,
@@ -513,6 +524,7 @@ TheoryAtomTruth classify_theory_atom(
     ExactBoxType const& domain,
     ContinuousPredicate const& atom);
 
+/** @brief TheoryAtomImplication represents an SMT search component. */
 struct TheoryAtomImplication {
     Bool force_true = false;
     Bool force_false = false;
@@ -535,6 +547,7 @@ TheoryAtomImplication domain_theory_implication(
     ExactBoxType const& domain,
     ContinuousPredicate const& atom);
 
+/** @brief TheoryResultInterpretation represents an SMT search component. */
 struct TheoryResultInterpretation {
     Bool consistent = false;
     SmtUnknownReason unknown_reason = SmtUnknownReason::NONE;
@@ -619,6 +632,7 @@ class SmtSolver {
             List<SmtTheoryPrimitiveLiteral> const&);
     using BoxProcessingStatus=SmtSolverTestSupport::BoxProcessingStatus;
 
+    /** @brief ReductionStatistics represents an SMT search component. */
     struct ReductionStatistics {
         SizeType hull_rounds = 0u;
         SizeType hull_effective = 0u;
@@ -648,6 +662,7 @@ class SmtSolver {
         SizeType monotone_effective = 0u;
     };
 
+    /** @brief BoxProcessingResult represents an SMT search component. */
     struct BoxProcessingResult {
         BoxProcessingStatus status;
         std::optional<UpperBoxType> witness;
@@ -685,6 +700,7 @@ class SmtSolver {
     using CompiledTheoryLiteral = ConstraintPropagationConstraint;
     using CompiledTheoryLiterals = std::vector<CompiledTheoryLiteral>;
 
+    /** @brief ConjunctionReference represents an SMT search component. */
     struct ConjunctionReference {
         List<ValidatedConstraint> const* constraints;
         CompiledTheoryLiterals const* theory_literals;
@@ -745,6 +761,7 @@ class SmtSolver {
     Bool _epsilon_satisfied(UpperBoxType const& domain,
                             CompiledTheoryLiterals const& literals) const;
 
+    /** @brief DirectClassification represents an SMT search component. */
     struct DirectClassification {
         Bool used = false;
         Bool preclassification = false;
@@ -774,6 +791,7 @@ class SmtSolver {
     UpperBoxType _epsilon_candidate_witness(
         UpperBoxType const& domain,
         Conjunction const& conjunction) const;
+    /** @brief SplitBoxResult represents an SMT search component. */
     struct SplitBoxResult {
         Pair<UpperBoxType,UpperBoxType> children;
         Bool sensitivity_guided = false;
