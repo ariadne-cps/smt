@@ -28,6 +28,7 @@
 
 #include <sstream>
 
+#include "logging/test_runner.hpp"
 #include "smt/smt_solver.hpp"
 #include "threading/thread_manager.hpp"
 
@@ -4281,5 +4282,5 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestSmtSolver, test_interval_newton_adaptive_retry);
     ARIADNE_TESTING_ADD_TEST(TestSmtSolver, test_boolean_theory_solve);
     ARIADNE_TESTING_ADD_TEST(TestSmtSolver, test_parallel_solve);
-    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
+    return Ariadne::Testing::run_logging_suite(ariadne_test_suite, argc, argv);
 }

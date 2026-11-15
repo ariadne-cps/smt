@@ -36,6 +36,7 @@
 #include <iostream>
 #include <limits>
 
+#include "logging/test_runner.hpp"
 #include "smt/smt_solver.hpp"
 #include "smt_barr3_full64.hpp"
 
@@ -102,5 +103,5 @@ class TestSmtNeuralBenchmarks : public Ariadne::Testing::ContextFixture {
 int main(int argc, char** argv) {
     ARIADNE_TESTING_SUITE("test_smt_neural_benchmarks");
     ARIADNE_TESTING_ADD_TEST(TestSmtNeuralBenchmarks, test_barr3_full64_smoke);
-    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
+    return Ariadne::Testing::run_logging_suite(ariadne_test_suite, argc, argv);
 }

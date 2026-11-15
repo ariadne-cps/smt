@@ -28,6 +28,7 @@
 
 #include <sstream>
 
+#include "logging/test_runner.hpp"
 #include "numeric/numeric.hpp"
 #include "smt/smt_theory.hpp"
 #include "symbolic/variable.hpp"
@@ -233,5 +234,5 @@ int main(int argc, char** argv) {
     ARIADNE_TESTING_ADD_TEST(TestSmtTheory, test_streaming);
     ARIADNE_TESTING_ADD_TEST(TestSmtTheory, test_invalid_relations);
     ARIADNE_TESTING_ADD_TEST(TestSmtTheory, test_reject_non_atom);
-    return ARIADNE_TESTING_RUN_TESTS_WITH_ARGS(argc, argv);
+    return Ariadne::Testing::run_logging_suite(ariadne_test_suite, argc, argv);
 }

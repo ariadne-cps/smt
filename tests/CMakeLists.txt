@@ -9,7 +9,7 @@ set(UNIT_TESTS
 foreach(TEST ${UNIT_TESTS})
     add_executable(${TEST} ${TEST}.cpp)
     target_link_libraries(${TEST} PRIVATE ariadne-smt smt ariadne-testing)
-    add_test(NAME ${TEST} COMMAND $<TARGET_FILE:${TEST}> --concise)
+    add_test(NAME ${TEST} COMMAND $<TARGET_FILE:${TEST}> --concise --logtonull)
     set_property(TEST ${TEST} PROPERTY LABELS "smt")
 endforeach()
 target_include_directories(test_smt_neural_benchmarks PRIVATE ${PROJECT_SOURCE_DIR}/benchmarks)
